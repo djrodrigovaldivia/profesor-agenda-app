@@ -369,19 +369,19 @@ export const NotasRapidasSection: React.FC = () => {
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/70">
             <button
-              type="button"
-              onClick={handleCancelCreate}
-              className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button
               type="submit"
               id="btn-guardar-nota-rapida"
               className="inline-flex items-center gap-1 px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Guardar nota</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelCreate}
+              className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              Cancelar
             </button>
           </div>
         </form>
@@ -470,18 +470,18 @@ export const NotasRapidasSection: React.FC = () => {
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
                     <button
                       type="button"
-                      onClick={handleCancelEdit}
-                      className="px-3 py-1 text-xs text-slate-400 hover:text-slate-200"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => handleSaveEdit(nota.id)}
-                      className="inline-flex items-center gap-1 px-3 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs rounded-lg"
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>Guardar cambios</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="px-3 py-1 text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+                    >
+                      Cancelar
                     </button>
                   </div>
                 </div>

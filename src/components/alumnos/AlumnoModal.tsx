@@ -326,15 +326,6 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
         {/* Actions */}
         <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-800">
           <button
-            type="button"
-            id="btn-cancelar-alumno"
-            onClick={onClose}
-            disabled={isSaving}
-            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer"
-          >
-            Cancelar
-          </button>
-          <button
             type="submit"
             id="btn-guardar-alumno"
             disabled={isSaving}
@@ -350,6 +341,15 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
             ) : (
               "Crear alumno"
             )}
+          </button>
+          <button
+            type="button"
+            id="btn-cancelar-alumno"
+            onClick={onClose}
+            disabled={isSaving}
+            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer"
+          >
+            Cancelar
           </button>
         </div>
       </form>

@@ -568,20 +568,20 @@ export const TocataModal: React.FC<TocataModalProps> = ({
 
             <div className="flex items-center gap-2 ml-auto">
               <button
-                type="button"
-                id="btn-cancelar-tocata"
-                onClick={closeWhenIdle}
-                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
                 type="submit"
                 disabled={saving}
                 id="btn-guardar-tocata"
-                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-sm"
+                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-sm cursor-pointer disabled:opacity-50"
               >
                 {isEditing ? "Guardar cambios" : "Crear Fecha DJ"}
+              </button>
+              <button
+                type="button"
+                id="btn-cancelar-tocata"
+                onClick={closeWhenIdle}
+                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancelar
               </button>
             </div>
           </div>

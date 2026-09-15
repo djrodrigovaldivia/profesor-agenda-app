@@ -1030,15 +1030,6 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
 
             <div className="flex items-center gap-2 ml-auto">
               <button
-                type="button"
-                id="btn-cancelar-clase"
-                onClick={onClose}
-                disabled={isSubmitting || isDeleting}
-                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-              >
-                Cancelar
-              </button>
-              <button
                 type="submit"
                 id="btn-guardar-clase"
                 disabled={isSubmitting || isDeleting || alumnosDisponibles.length === 0}
@@ -1054,6 +1045,15 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
                 ) : (
                   "Crear clase"
                 )}
+              </button>
+              <button
+                type="button"
+                id="btn-cancelar-clase"
+                onClick={onClose}
+                disabled={isSubmitting || isDeleting}
+                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+              >
+                Cancelar
               </button>
             </div>
           </div>
