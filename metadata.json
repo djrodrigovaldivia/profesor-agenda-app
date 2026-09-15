@@ -1,0 +1,6 @@
+{
+  "name": "Profesor Agenda",
+  "description": "Agenda privada, responsive y móvil para profesor de música y DJ. Gestión de alumnos, Clases ALMA, Mentorías La Escalera y Fechas DJ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%" fx="30%" fy="30%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <radialGradient id="hubGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </radialGradient>
+  </defs>
+
+  <!-- Base background -->
+  <rect width="512" height="512" rx="100" fill="#020617"/>
+
+  <!-- Vinyl Record Outer Ring -->
+  <circle cx="256" cy="235" r="180" fill="url(#bgGrad)" stroke="#1e293b" stroke-width="4"/>
+
+  <!-- Subtle Vinyl Grooves -->
+  <circle cx="256" cy="235" r="155" fill="none" stroke="#334155" stroke-width="1.5" opacity="0.4"/>
+  <circle cx="256" cy="235" r="135" fill="none" stroke="#334155" stroke-width="1" opacity="0.3"/>
+  <circle cx="256" cy="235" r="115" fill="none" stroke="#334155" stroke-width="1.5" opacity="0.35"/>
+  <circle cx="256" cy="235" r="95" fill="none" stroke="#334155" stroke-width="1" opacity="0.3"/>
+
+  <!-- Center Hub / Label -->
+  <circle cx="256" cy="235" r="75" fill="url(#hubGrad)" stroke="#38bdf8" stroke-width="2.5" opacity="0.9"/>
+
+  <!-- Brand Tricolor Arcs inside Hub -->
+  <!-- Blue ALMA -->
+  <path d="M 256 185 A 50 50 0 0 1 299 210" fill="none" stroke="#9fc6e7" stroke-width="6" stroke-linecap="round"/>
+  <!-- Green La Escalera -->
+  <path d="M 299 260 A 50 50 0 0 1 256 285" fill="none" stroke="#a7dc9e" stroke-width="6" stroke-linecap="round"/>
+  <!-- Orange DJ -->
+  <path d="M 213 260 A 50 50 0 0 1 213 210" fill="none" stroke="#f8995d" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Center Spindle -->
+  <circle cx="256" cy="235" r="18" fill="#020617" stroke="#94a3b8" stroke-width="3"/>
+  <circle cx="256" cy="235" r="6" fill="#94a3b8"/>
+
+  <!-- Bottom 3 Category Dots: ALMA, La Escalera, DJ -->
+  <circle cx="186" cy="435" r="14" fill="#9fc6e7"/>
+  <circle cx="256" cy="435" r="14" fill="#a7dc9e"/>
+  <circle cx="326" cy="435" r="14" fill="#f8995d"/>
+</svg>
