@@ -114,8 +114,8 @@ export const GoogleCalendarSyncToggle: React.FC<GoogleCalendarSyncToggleProps> =
             </label>
             <p className="text-[11px] text-slate-400 leading-tight truncate">
               {isConnected
-                ? "Crea y actualiza el evento en tu Google Calendar principal"
-                : "Conecta tu calendario de Google para sincronizar"}
+                ? "Sincroniza y activa alertas en tu celular (24h, 2h y 30m antes)"
+                : "Conecta tu calendario de Google para sincronizar y activar alertas"}
             </p>
           </div>
         </div>

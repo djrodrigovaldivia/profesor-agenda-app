@@ -212,7 +212,7 @@ export function buildNotificationStorageKey(
   uid: string | null | undefined,
   tipoActividad: "clase" | "tocata",
   idActividad: string,
-  trigger: "1d" | "2h",
+  trigger: "1d" | "2h" | "30m",
   fecha: string,
   horaInicio: string
 ): string {
@@ -311,6 +311,9 @@ function getTocataLugarTexto(tocata: Tocata): string {
 
 export const TWO_HOURS_REMINDER_MIN_MS = 115 * 60 * 1000;
 export const TWO_HOURS_REMINDER_MAX_MS = 125 * 60 * 1000;
+
+export const THIRTY_MINUTES_REMINDER_MIN_MS = 25 * 60 * 1000;
+export const THIRTY_MINUTES_REMINDER_MAX_MS = 35 * 60 * 1000;
 
 export interface CheckAndNotifyOptions {
   uid?: string | null;
@@ -466,6 +469,32 @@ export async function checkAndNotifyUpcomingEvents(
         }
       }
     }
+
+    // Trigger C: 30 minutos antes (solo si faltan entre 25 y 35 minutos)
+    if (diffMs >= THIRTY_MINUTES_REMINDER_MIN_MS && diffMs <= THIRTY_MINUTES_REMINDER_MAX_MS) {
+      const key30m = buildNotificationStorageKey(
+        uid,
+        "clase",
+        clase.id,
+        "30m",
+        clase.fecha,
+        clase.horaInicio
+      );
+      if (!localStorage.getItem(key30m)) {
+        const title = "Profesor Agenda";
+        const body = `En 30 minutos tienes una clase a las ${clase.horaInicio} con ${alumnoNombre}.`;
+        const sent = await sendLocalPushNotification(title, {
+          body,
+          tag: `clase-30m-${clase.id}`,
+        });
+        if (sent) {
+          localStorage.setItem(
+            key30m,
+            JSON.stringify({ timestamp: Date.now(), fecha: clase.fecha, horaInicio: clase.horaInicio })
+          );
+        }
+      }
+    }
   }
 
   // 2. Process Tocatas
@@ -539,6 +568,32 @@ export async function checkAndNotifyUpcomingEvents(
         if (sent) {
           localStorage.setItem(
             key2h,
+            JSON.stringify({ timestamp: Date.now(), fecha: tocata.fecha, horaInicio: tocata.horaInicio })
+          );
+        }
+      }
+    }
+
+    // Trigger C: 30 minutos antes (solo si faltan entre 25 y 35 minutos)
+    if (diffMs >= THIRTY_MINUTES_REMINDER_MIN_MS && diffMs <= THIRTY_MINUTES_REMINDER_MAX_MS) {
+      const key30m = buildNotificationStorageKey(
+        uid,
+        "tocata",
+        tocata.id,
+        "30m",
+        tocata.fecha,
+        tocata.horaInicio
+      );
+      if (!localStorage.getItem(key30m)) {
+        const title = "Profesor Agenda";
+        const body = `En 30 minutos tienes una tocata a las ${tocata.horaInicio} en ${lugar}.`;
+        const sent = await sendLocalPushNotification(title, {
+          body,
+          tag: `tocata-30m-${tocata.id}`,
+        });
+        if (sent) {
+          localStorage.setItem(
+            key30m,
             JSON.stringify({ timestamp: Date.now(), fecha: tocata.fecha, horaInicio: tocata.horaInicio })
           );
         }

@@ -215,8 +215,9 @@ function createReminders(cancelled: boolean): GoogleCalendarEventPayload["remind
     overrides: cancelled
       ? []
       : [
-          { method: "popup", minutes: 1440 },
-          { method: "popup", minutes: 30 },
+          { method: "popup", minutes: 1440 }, // 24 horas antes
+          { method: "popup", minutes: 120 },  // 2 horas antes
+          { method: "popup", minutes: 30 },   // 30 minutos antes
         ],
   };
 }

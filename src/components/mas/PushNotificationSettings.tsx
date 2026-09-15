@@ -104,7 +104,7 @@ export const PushNotificationSettings: React.FC = () => {
               Notificaciones
             </h3>
             <p className="text-xs text-slate-400">
-              Recibe avisos 1 día y 2 horas antes de tus clases y fechas DJ.
+              Recibe avisos 24 horas, 2 horas y 30 minutos antes de tus clases y fechas DJ.
             </p>
           </div>
         </div>

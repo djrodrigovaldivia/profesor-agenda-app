@@ -101,7 +101,10 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSaving) return;
-    if (!validate()) return;
+    if (!validate()) {
+      setSubmitError("Por favor completa los campos obligatorios marcados en rojo.");
+      return;
+    }
 
     const trimmedNombre = nombre.trim();
     const trimmedApellido = apellido.trim();
@@ -322,6 +325,15 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
             />
           </button>
         </div>
+
+        {submitError && (
+          <div className="pt-2">
+            <DetailedErrorBanner
+              id="alumno-submit-error-bottom"
+              error={submitError}
+            />
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-800">

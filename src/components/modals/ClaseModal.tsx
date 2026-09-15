@@ -266,13 +266,6 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
       errs.horaFin = "La hora de término debe ser posterior a la hora de inicio.";
     }
 
-    // Precondición 5: Tema obligatorio con longitud mínima
-    if (!tema.trim()) {
-      errs.tema = "El tema de la clase es obligatorio.";
-    } else if (tema.trim().length < 2) {
-      errs.tema = "El tema debe tener al menos 2 caracteres.";
-    }
-
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -367,7 +360,10 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
     // Precondición de atomicidad: evitar múltiples envíos concurrentes
     if (isSubmitting || isDeleting) return;
 
-    if (!validate()) return;
+    if (!validate()) {
+      setSubmitError("Por favor completa los campos obligatorios marcados en rojo.");
+      return;
+    }
 
     const recordatorioPayload = {
       activo: recordatorioActivo,
@@ -729,7 +725,7 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
           {/* Tema */}
           <div>
             <label htmlFor="clase-tema" className="block text-xs font-medium text-slate-300 mb-1.5">
-              Tema de la clase <span className="text-rose-400">*</span>
+              Tema de la clase (opcional)
             </label>
             <input
               type="text"
@@ -836,11 +832,11 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
                   </label>
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                     {[
-                      { label: "15 min", val: 15, unit: "minutos" as const },
                       { label: "30 min", val: 30, unit: "minutos" as const },
-                      { label: "1 hora", val: 1, unit: "horas" as const },
                       { label: "2 horas", val: 2, unit: "horas" as const },
-                      { label: "1 día", val: 1, unit: "dias" as const },
+                      { label: "1 día (24h)", val: 1, unit: "dias" as const },
+                      { label: "15 min", val: 15, unit: "minutos" as const },
+                      { label: "1 hora", val: 1, unit: "horas" as const },
                       { label: "2 días", val: 2, unit: "dias" as const },
                     ].map((preset) => {
                       const isSelected =
@@ -998,6 +994,15 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
             onRetry={editingClaseId ? handleRetrySync : undefined}
             isRetrying={isRetryingSync}
           />
+
+          {submitError && (
+            <div className="pt-2">
+              <DetailedErrorBanner
+                id="clase-submit-error-bottom"
+                error={submitError}
+              />
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-800 gap-2 flex-wrap">

@@ -65,7 +65,7 @@ mock.module("./AuthContext", {
 mock.module("../utils/notificationService", { namedExports: {
   checkAndNotifyUpcomingEvents: unexpected, checkAndNotifyClaseReminders: unexpected, registerNotificationServiceWorker: unexpected,
   getNotificationPermission: () => "default", requestNotificationPermission: unexpected,
-  calculateNotificationTriggerTime: () => null, sendTestClaseNotification: unexpected,
+  calculateNotificationTriggerTime: () => null, sendTestClaseNotification: unexpected, showTestNotification: unexpected,
 } });
 mock.module("../components/common/Modal", { namedExports: { Modal: "modal" } });
 mock.module("../components/common/ConfirmDialog", { namedExports: { ConfirmDialog: "confirm" } });

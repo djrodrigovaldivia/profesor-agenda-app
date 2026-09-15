@@ -48,6 +48,7 @@ test("mapea una clase normal con privacidad y dos recordatorios", () => {
   assert.equal(result.event.location, undefined);
   assert.deepEqual(result.event.reminders.overrides, [
     { method: "popup", minutes: 1440 },
+    { method: "popup", minutes: 120 },
     { method: "popup", minutes: 30 },
   ]);
   assert.equal(result.event.extendedProperties.private.sourceType, "clase");

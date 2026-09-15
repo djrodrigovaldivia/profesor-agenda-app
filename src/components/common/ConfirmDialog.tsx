@@ -87,15 +87,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         </div>
 
         {/* Action buttons with 44px+ touch targets on mobile */}
-        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5 pt-3 border-t border-slate-800/90">
-          <button
-            type="button"
-            id="confirm-cancel-btn"
-            onClick={onClose}
-            className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700/90 active:scale-[0.98] border border-slate-700/60 rounded-xl transition-all flex items-center justify-center cursor-pointer"
-          >
-            {cancelText}
-          </button>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2.5 pt-3 border-t border-slate-800/90">
           <button
             type="button"
             id="confirm-action-btn"
@@ -110,6 +102,14 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             }`}
           >
             {confirmText}
+          </button>
+          <button
+            type="button"
+            id="confirm-cancel-btn"
+            onClick={onClose}
+            className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700/90 active:scale-[0.98] border border-slate-700/60 rounded-xl transition-all flex items-center justify-center cursor-pointer"
+          >
+            {cancelText}
           </button>
         </div>
       </div>

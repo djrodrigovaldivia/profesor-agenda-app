@@ -7,7 +7,12 @@ import { DetailedErrorBanner } from "../common/DetailedErrorBanner";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { GoogleCalendarSyncToggle } from "../common/GoogleCalendarSyncToggle";
 import { getISODate, formatTimeRange } from "../../utils/dateUtils";
-import { Clock, MapPin, DollarSign, Phone, Trash2, Radio, Copy } from "lucide-react";
+import { Clock, MapPin, DollarSign, Phone, Trash2, Radio, Copy, Loader2, Bell, CheckCircle2, Volume2 } from "lucide-react";
+import {
+  requestNotificationPermission,
+  getNotificationPermission,
+  showTestNotification,
+} from "../../utils/notificationService";
 
 interface TocataModalProps {
   isOpen: boolean;
@@ -29,6 +34,24 @@ const ESTADOS_TOCATA: { value: EstadoTocata; label: string }[] = [
   { value: "realizada", label: "Realizada" },
   { value: "cancelada", label: "Cancelada" },
 ];
+
+/** Formatea números o texto extrayendo solo los dígitos y separando miles con puntos (.) sin conflicto de símbolos */
+function formatCLPString(raw: string | number | null | undefined): string {
+  if (raw === null || raw === undefined || raw === "") return "";
+  const digits = String(raw).replace(/\D/g, "");
+  if (!digits) return "";
+  const num = parseInt(digits, 10);
+  return isNaN(num) ? "" : num.toLocaleString("es-CL");
+}
+
+/** Extrae el número entero en pesos o null si está vacío, inmune a símbolos como $, puntos o comas */
+function parseCLPString(raw: string): number | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return null;
+  const num = parseInt(digits, 10);
+  return isNaN(num) ? null : num;
+}
 
 export const TocataModal: React.FC<TocataModalProps> = ({
   isOpen,
@@ -66,6 +89,11 @@ export const TocataModal: React.FC<TocataModalProps> = ({
   const [syncWithGoogle, setSyncWithGoogle] = useState(() => Boolean(tocataToEdit?.googleCalendar?.enabled));
   const [isRetryingSync, setIsRetryingSync] = useState(false);
 
+  // Alerta y notificación de prueba
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | "unsupported">("default");
+  const [isTestingNotification, setIsTestingNotification] = useState(false);
+  const [testFeedback, setTestFeedback] = useState<string | null>(null);
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [precondition, setPrecondition] = useState<AgendaEditPrecondition | null>(null);
@@ -73,11 +101,14 @@ export const TocataModal: React.FC<TocataModalProps> = ({
   const [operationError, setOperationError] = useState<string | null>(null);
   const openedEntity = useRef<string | null>(null);
   const pending = useRef(false);
+  const formTopRef = useRef<HTMLDivElement>(null);
   const closeWhenIdle = () => { if (!pending.current) onClose(); };
 
   useEffect(() => {
     if (!isOpen) { openedEntity.current = null; return; }
     if (isOpen) {
+      setPermissionStatus(getNotificationPermission());
+      setTestFeedback(null);
       const key = tocataToEdit?.id ?? "new";
       if (openedEntity.current === key) return;
       openedEntity.current = key;
@@ -99,7 +130,7 @@ export const TocataModal: React.FC<TocataModalProps> = ({
         setContacto(tocataToEdit.contacto || "");
         setHonorarios(
           tocataToEdit.honorarios !== null && tocataToEdit.honorarios !== undefined
-            ? String(tocataToEdit.honorarios)
+            ? formatCLPString(tocataToEdit.honorarios)
             : ""
         );
         setNotas(tocataToEdit.notas || "");
@@ -161,87 +192,127 @@ export const TocataModal: React.FC<TocataModalProps> = ({
       errs.horaFin = "Ingresa la hora de término.";
     }
 
-    if (honorarios.trim() !== "") {
-      const num = Number(honorarios);
-      if (isNaN(num) || num < 0) {
-        errs.honorarios = "Los honorarios deben ser un valor numérico mayor o igual a 0.";
-      }
-    }
-
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
+  const handleTestNotification = async () => {
+    setIsTestingNotification(true);
+    setTestFeedback(null);
+    try {
+      if (permissionStatus !== "granted") {
+        const res = await requestNotificationPermission();
+        setPermissionStatus(res);
+        if (res !== "granted") {
+          setTestFeedback("Permiso no concedido en el navegador.");
+          setIsTestingNotification(false);
+          return;
+        }
+      }
+      const sent = await showTestNotification();
+      if (sent) {
+        setTestFeedback("¡Notificación de prueba emitida con éxito!");
+      } else {
+        setTestFeedback("No se pudo emitir. Revisa la configuración del navegador.");
+      }
+    } catch {
+      setTestFeedback("Error al emitir notificación.");
+    } finally {
+      setIsTestingNotification(false);
+      setTimeout(() => setTestFeedback(null), 5000);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pending.current || !validate()) return;
-    pending.current = true; setSaving(true); setOperationError(null);
-    try {
-
-    const parsedHonorarios =
-      honorarios.trim() !== "" ? Number(honorarios.trim()) : null;
-
-    const isCalendarAuthorized =
-      calendarAuth.status === "authorized_temporarily" && Boolean(calendarAuth.identity);
-    const wasEnabled = Boolean(tocataToEdit?.googleCalendar?.enabled);
-
-    if (syncWithGoogle && !wasEnabled && !isCalendarAuthorized) {
-      setOperationError("Debes autorizar Google Calendar para activar la sincronización.");
+    if (pending.current) return;
+    if (!validate()) {
+      setOperationError("Por favor completa los campos obligatorios marcados en rojo.");
+      formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
+    pending.current = true;
+    setSaving(true);
+    setOperationError(null);
+    try {
+      const parsedHonorarios = parseCLPString(honorarios);
 
-    const authorizedLink: AgendaAuthorizedLink | undefined =
-      syncWithGoogle && isCalendarAuthorized && calendarAuth.identity
-        ? {
-            authorized: true,
-            googleAccountId: calendarAuth.identity.googleAccountId,
-            calendarId: "primary",
-          }
-        : undefined;
-
-    if (editingTocataId) {
-      if (!precondition) throw new AgendaCrudError("invalid_argument");
-      await updateTocata(editingTocataId, {
-        titulo: titulo.trim(),
-        fecha,
-        horaInicio,
-        horaFin,
-        proyecto,
-        estado,
-        lugar: lugar.trim() || undefined,
-        ciudad: ciudad.trim() || undefined,
-        direccion: direccion.trim() || undefined,
-        contacto: contacto.trim() || undefined,
-        honorarios: parsedHonorarios,
-        notas: notas.trim() || undefined,
-      }, precondition);
-
+      const isCalendarAuthorized =
+        calendarAuth.status === "authorized_temporarily" && Boolean(calendarAuth.identity);
       const wasEnabled = Boolean(tocataToEdit?.googleCalendar?.enabled);
-      if (syncWithGoogle && !wasEnabled && authorizedLink) {
-        await enableEntityCalendarLink("tocata", editingTocataId, authorizedLink);
-      } else if (!syncWithGoogle && wasEnabled) {
-        await disableEntityCalendarLink("tocata", editingTocataId);
-      }
-    } else {
-      await addTocata({
-        titulo: titulo.trim(),
-        fecha,
-        horaInicio,
-        horaFin,
-        proyecto,
-        estado,
-        lugar: lugar.trim() || undefined,
-        ciudad: ciudad.trim() || undefined,
-        direccion: direccion.trim() || undefined,
-        contacto: contacto.trim() || undefined,
-        honorarios: parsedHonorarios,
-        notas: notas.trim() || undefined,
-      }, authorizedLink);
-    }
 
-    onClose();
-    } catch (error) { setOperationError(agendaCrudErrorMessage(error)); }
-    finally { pending.current = false; setSaving(false); }
+      if (syncWithGoogle && !wasEnabled && !isCalendarAuthorized) {
+        setOperationError("Debes autorizar Google Calendar para activar la sincronización, o desactiva la casilla.");
+        formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+
+      const authorizedLink: AgendaAuthorizedLink | undefined =
+        syncWithGoogle && isCalendarAuthorized && calendarAuth.identity
+          ? {
+              authorized: true,
+              googleAccountId: calendarAuth.identity.googleAccountId,
+              calendarId: "primary",
+            }
+          : undefined;
+
+      if (editingTocataId) {
+        const effectivePrecondition =
+          precondition || (tocataToEdit ? captureEditPrecondition("tocata", tocataToEdit) : null);
+        await updateTocata(
+          editingTocataId,
+          {
+            titulo: titulo.trim(),
+            fecha,
+            horaInicio,
+            horaFin,
+            proyecto,
+            estado,
+            lugar: lugar.trim() || undefined,
+            ciudad: ciudad.trim() || undefined,
+            direccion: direccion.trim() || undefined,
+            contacto: contacto.trim() || undefined,
+            honorarios: parsedHonorarios,
+            notas: notas.trim() || undefined,
+          },
+          effectivePrecondition
+        );
+
+        const wasEnabled = Boolean(tocataToEdit?.googleCalendar?.enabled);
+        if (syncWithGoogle && !wasEnabled && authorizedLink) {
+          await enableEntityCalendarLink("tocata", editingTocataId, authorizedLink);
+        } else if (!syncWithGoogle && wasEnabled) {
+          await disableEntityCalendarLink("tocata", editingTocataId);
+        }
+      } else {
+        await addTocata(
+          {
+            titulo: titulo.trim(),
+            fecha,
+            horaInicio,
+            horaFin,
+            proyecto,
+            estado,
+            lugar: lugar.trim() || undefined,
+            ciudad: ciudad.trim() || undefined,
+            direccion: direccion.trim() || undefined,
+            contacto: contacto.trim() || undefined,
+            honorarios: parsedHonorarios,
+            notas: notas.trim() || undefined,
+          },
+          authorizedLink
+        );
+      }
+
+      onClose();
+    } catch (error) {
+      console.error("Error al guardar tocata:", error);
+      setOperationError(agendaCrudErrorMessage(error));
+      formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
   };
 
   const handleRetrySync = async () => {
@@ -258,14 +329,23 @@ export const TocataModal: React.FC<TocataModalProps> = ({
 
   const handleDelete = async () => {
     if (!editingTocataId || pending.current) return;
-    pending.current = true; setSaving(true); setOperationError(null);
+    pending.current = true;
+    setSaving(true);
+    setOperationError(null);
     try {
-      if (!precondition) throw new AgendaCrudError("invalid_argument");
-      await deleteTocata(editingTocataId, precondition);
+      const effectivePrecondition =
+        precondition || (tocataToEdit ? captureEditPrecondition("tocata", tocataToEdit) : null);
+      await deleteTocata(editingTocataId, effectivePrecondition);
       setShowDeleteConfirm(false);
       onClose();
-    } catch (error) { setOperationError(agendaCrudErrorMessage(error)); }
-    finally { pending.current = false; setSaving(false); }
+    } catch (error) {
+      console.error("Error al eliminar tocata:", error);
+      setOperationError(agendaCrudErrorMessage(error));
+      formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
   };
 
   const isEditing = !!editingTocataId;
@@ -289,6 +369,7 @@ export const TocataModal: React.FC<TocataModalProps> = ({
         }
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div ref={formTopRef} />
           {operationError && (
             <>
               <div role="alert" className="sr-only">
@@ -491,28 +572,39 @@ export const TocataModal: React.FC<TocataModalProps> = ({
 
           {/* Honorarios */}
           <div>
-            <label htmlFor="tocata-honorarios" className="block text-xs font-medium text-slate-300 mb-1.5">
-              Honorarios acordados en CLP (opcional)
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="tocata-honorarios" className="block text-xs font-medium text-slate-300">
+                Honorarios acordados en CLP (opcional)
+              </label>
+              {honorarios && (
+                <button
+                  type="button"
+                  id="btn-limpiar-honorarios"
+                  onClick={() => setHonorarios("")}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  Quitar valor
+                </button>
+              )}
+            </div>
             <div className="relative">
-              <span className="absolute left-3 top-2.5 text-xs text-slate-500 font-mono">$</span>
+              <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-mono font-medium">$</span>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 id="tocata-honorarios"
-                placeholder="Ej: 250000"
-                min="0"
-                step="1000"
+                placeholder="Ej: 250.000 (o déjalo en blanco)"
                 value={honorarios}
                 onChange={(e) => {
-                  setHonorarios(e.target.value);
+                  setHonorarios(formatCLPString(e.target.value));
                   if (errors.honorarios) setErrors((prev) => ({ ...prev, honorarios: "" }));
                 }}
-                className="w-full pl-7 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-7 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
               />
             </div>
-            {errors.honorarios && (
-              <p className="text-xs text-rose-400 mt-1">{errors.honorarios}</p>
-            )}
+            <p className="text-[11px] text-slate-500 mt-1">
+              Inmune a símbolos: puedes escribir números libres o con puntos. Si no aplica pago, déjalo en blanco o haz clic en "Quitar valor".
+            </p>
           </div>
 
           {/* Notas */}
@@ -530,6 +622,67 @@ export const TocataModal: React.FC<TocataModalProps> = ({
             />
           </div>
 
+          {/* Avisos y Notificaciones Push (24h, 2h y 30m) */}
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center border shrink-0 bg-amber-950/70 border-amber-700/80 text-amber-300 shadow-sm">
+                <Bell className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm font-semibold text-slate-200 block truncate">
+                  Recordatorios automáticos en tu celular
+                </p>
+                <p className="text-[11px] text-slate-400 leading-tight">
+                  Avisos programados a las 24 horas, 2 horas y 30 minutos antes de la tocata.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap">
+              {permissionStatus !== "granted" ? (
+                <div className="flex items-center justify-between w-full p-2 rounded-lg bg-slate-900 border border-slate-800 text-xs gap-2">
+                  <span className="text-amber-400 text-[11px]">
+                    {permissionStatus === "denied"
+                      ? "Permiso de notificaciones bloqueado en navegador"
+                      : "Habilita permisos para recibir alertas push"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await requestNotificationPermission();
+                      setPermissionStatus(res);
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-medium bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-md transition-colors shrink-0 cursor-pointer"
+                  >
+                    Habilitar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between w-full text-[11px]">
+                  <span className="inline-flex items-center gap-1.5 text-emerald-400">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Alertas push habilitadas
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleTestNotification}
+                    disabled={isTestingNotification}
+                    className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <Volume2 className="w-3 h-3" />
+                    {isTestingNotification ? "Probando..." : "Probar sonido y alerta"}
+                  </button>
+                </div>
+              )}
+
+              {testFeedback && (
+                <p className="w-full text-[11px] text-sky-300 bg-sky-950/40 border border-sky-800/40 rounded px-2 py-1">
+                  {testFeedback}
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* Sincronización con Google Calendar */}
           <GoogleCalendarSyncToggle
             enabled={syncWithGoogle}
@@ -539,6 +692,15 @@ export const TocataModal: React.FC<TocataModalProps> = ({
             isRetrying={isRetryingSync}
           />
 
+          {operationError && (
+            <div className="pt-2">
+              <DetailedErrorBanner
+                id="tocata-submit-error-bottom"
+                error={operationError}
+              />
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-800 gap-2 flex-wrap">
             {isEditing ? (
@@ -547,7 +709,8 @@ export const TocataModal: React.FC<TocataModalProps> = ({
                   type="button"
                   id="btn-eliminar-tocata"
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3 py-2 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-900/50 rounded-lg transition-colors"
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3 py-2 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-900/50 rounded-lg transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                 >
                   <Trash2 className="w-4 h-4" />
                   Eliminar
@@ -556,7 +719,8 @@ export const TocataModal: React.FC<TocataModalProps> = ({
                   type="button"
                   id="btn-duplicar-tocata"
                   onClick={handleDuplicate}
-                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-200 hover:text-slate-50 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-colors active:scale-[0.98] shadow-sm"
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-200 hover:text-slate-50 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-colors active:scale-[0.98] shadow-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                 >
                   <Copy className="w-4 h-4 text-slate-400" />
                   Duplicar
@@ -571,15 +735,25 @@ export const TocataModal: React.FC<TocataModalProps> = ({
                 type="submit"
                 disabled={saving}
                 id="btn-guardar-tocata"
-                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white rounded-lg transition-colors shadow-sm cursor-pointer min-w-[130px]"
               >
-                {isEditing ? "Guardar cambios" : "Crear Fecha DJ"}
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" />
+                    <span>Guardando...</span>
+                  </>
+                ) : isEditing ? (
+                  "Guardar cambios"
+                ) : (
+                  "Crear Fecha DJ"
+                )}
               </button>
               <button
                 type="button"
                 id="btn-cancelar-tocata"
                 onClick={closeWhenIdle}
-                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                disabled={saving}
+                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
