@@ -8,6 +8,7 @@ import { GoogleDriveExportCard } from "./GoogleDriveExportCard";
 import { GoogleCalendarSyncCard } from "./GoogleCalendarSyncCard";
 import { PushNotificationSettings } from "./PushNotificationSettings";
 import { NotasRapidasSection } from "./NotasRapidasSection";
+import { APP_INFO } from "../../constants/appInfo";
 import {
   Bell,
   Download,
@@ -25,7 +26,9 @@ import {
   CloudDownload,
   Loader2,
   HardDrive,
+  FileSpreadsheet,
 } from "lucide-react";
+import { generateContableCSV, downloadCSV } from "../../utils/csvExport";
 
 export const MasView: React.FC = () => {
   const {
@@ -148,6 +151,25 @@ export const MasView: React.FC = () => {
       type: "success",
       text: "Respaldo local exportado exitosamente.",
     });
+  };
+
+  // Export Contable CSV (Excel ready)
+  const handleExportCSV = () => {
+    try {
+      const csv = generateContableCSV({ clases, tocatas, alumnos });
+      const filename = `profesor-agenda-contabilidad-${new Date().toISOString().slice(0, 10)}.csv`;
+      downloadCSV(filename, csv);
+      setImportStatusMessage({
+        type: "success",
+        text: "Planilla contable en formato CSV (Excel) descargada exitosamente.",
+      });
+    } catch (err: unknown) {
+      console.error("Error al exportar planilla CSV:", err);
+      setImportStatusMessage({
+        type: "error",
+        text: "Ocurrió un error al generar la planilla contable CSV.",
+      });
+    }
   };
 
   // Handle file select for import
@@ -492,7 +514,7 @@ export const MasView: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Exportar respaldo Firestore */}
           <button
             type="button"
@@ -533,7 +555,27 @@ export const MasView: React.FC = () => {
                 Exportar local
               </span>
               <span className="text-[11px] text-slate-400 line-clamp-1">
-                Descarga rápida de estado en memoria
+                Descarga rápida de JSON
+              </span>
+            </div>
+          </button>
+
+          {/* Exportar Planilla Contable CSV / Excel */}
+          <button
+            type="button"
+            id="btn-exportar-csv"
+            onClick={handleExportCSV}
+            className="min-h-[44px] p-3 bg-slate-950 hover:bg-slate-800 active:scale-[0.99] border border-amber-900/40 hover:border-amber-700/60 rounded-xl text-left transition-all flex items-center gap-3 group cursor-pointer"
+          >
+            <div className="p-2 rounded-lg bg-amber-950/70 border border-amber-800/60 text-amber-400 group-hover:bg-amber-900/50 transition-colors shrink-0">
+              <FileSpreadsheet className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-sm font-semibold text-slate-200 block group-hover:text-white truncate">
+                Planilla Excel / CSV
+              </span>
+              <span className="text-[11px] text-amber-400/90 line-clamp-1">
+                Clases, tocatas y honorarios
               </span>
             </div>
           </button>
@@ -635,6 +677,63 @@ export const MasView: React.FC = () => {
           alumno para proponer ejercicios y preguntas diferentes sin repetir
           contenidos.
         </p>
+      </div>
+
+      {/* Card 6: Acerca de Profesor Agenda */}
+      <div
+        id="seccion-acerca-de-profesor-agenda"
+        className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm"
+      >
+        <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-blue-950/70 border border-blue-800/70 text-blue-400">
+              <Info className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-slate-100">
+                Acerca de {APP_INFO.nombre}
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Información técnica y estado de la plataforma
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 text-xs font-semibold text-blue-300 bg-blue-950/80 border border-blue-800/70 rounded-md">
+              v{APP_INFO.version}
+            </span>
+            <span className="px-2.5 py-1 text-xs font-medium text-amber-300 bg-amber-950/70 border border-amber-800/70 rounded-md">
+              {APP_INFO.estado}
+            </span>
+          </div>
+        </div>
+
+        <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+          {APP_INFO.descripcion}
+        </p>
+
+        <div className="space-y-2">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            Tecnologías principales
+          </span>
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {APP_INFO.tecnologias.map((tech) => (
+              <span
+                key={tech}
+                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800/90 border border-slate-700/80 rounded-lg"
+              >
+                {tech}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-slate-850/80 border border-slate-700/60 text-xs text-slate-300 leading-relaxed flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-slate-300">
+            {APP_INFO.avisoFase}
+          </p>
+        </div>
       </div>
 
       {/* Confirm Logout Modal */}

@@ -1,13 +1,28 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Tocata, ProyectoDJ, EstadoTocata } from "../../types";
 import { useAgenda, agendaCrudErrorMessage, AgendaCrudError, type AgendaEditPrecondition, type AgendaAuthorizedLink } from "../../context/AgendaContext";
 import { useAuth } from "../../context/AuthContext";
 import { Modal } from "../common/Modal";
 import { DetailedErrorBanner } from "../common/DetailedErrorBanner";
+import { SaveTimeoutWarning } from "../common/SaveTimeoutWarning";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { GoogleCalendarSyncToggle } from "../common/GoogleCalendarSyncToggle";
 import { getISODate, formatTimeRange } from "../../utils/dateUtils";
-import { Clock, MapPin, DollarSign, Phone, Trash2, Radio, Copy, Loader2, Bell, CheckCircle2, Volume2 } from "lucide-react";
+import {
+  Clock,
+  MapPin,
+  DollarSign,
+  Phone,
+  Trash2,
+  Radio,
+  Copy,
+  Loader2,
+  Bell,
+  CheckCircle2,
+  Volume2,
+  AlertCircle,
+} from "lucide-react";
+import { detectScheduleConflict } from "../../utils/conflictUtils";
 import {
   requestNotificationPermission,
   getNotificationPermission,
@@ -60,6 +75,9 @@ export const TocataModal: React.FC<TocataModalProps> = ({
   defaultFecha,
 }) => {
   const {
+    clases = [],
+    tocatas = [],
+    alumnos = [],
     captureEditPrecondition,
     addTocata,
     updateTocata,
@@ -72,6 +90,19 @@ export const TocataModal: React.FC<TocataModalProps> = ({
 
   const [editingTocataId, setEditingTocataId] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
+
+  // Progressive Disclosure: acordeón para campos secundarios (Ley de Hick)
+  const [showOptionalDetails, setShowOptionalDetails] = useState<boolean>(() => {
+    return Boolean(
+      tocataToEdit?.lugar ||
+      tocataToEdit?.ciudad ||
+      tocataToEdit?.direccion ||
+      tocataToEdit?.contacto ||
+      tocataToEdit?.honorarios ||
+      tocataToEdit?.notas ||
+      tocataToEdit?.googleCalendar?.enabled
+    );
+  });
 
   const [titulo, setTitulo] = useState("");
   const [fecha, setFecha] = useState("");
@@ -99,10 +130,21 @@ export const TocataModal: React.FC<TocataModalProps> = ({
   const [precondition, setPrecondition] = useState<AgendaEditPrecondition | null>(null);
   const [saving, setSaving] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
   const openedEntity = useRef<string | null>(null);
   const pending = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formTopRef = useRef<HTMLDivElement>(null);
   const closeWhenIdle = () => { if (!pending.current) onClose(); };
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) { openedEntity.current = null; return; }
@@ -114,6 +156,7 @@ export const TocataModal: React.FC<TocataModalProps> = ({
       openedEntity.current = key;
       setPrecondition(tocataToEdit ? captureEditPrecondition("tocata", tocataToEdit) : null);
       setOperationError(null);
+      setShowTimeoutWarning(false);
       setShowDeleteConfirm(false);
       if (tocataToEdit) {
         setEditingTocataId(tocataToEdit.id);
@@ -196,6 +239,19 @@ export const TocataModal: React.FC<TocataModalProps> = ({
     return Object.keys(errs).length === 0;
   };
 
+  // Schedule Collision Detection (HCI Non-blocking warning banner)
+  const scheduleConflict = useMemo(() => {
+    return detectScheduleConflict({
+      fecha,
+      horaInicio,
+      horaFin,
+      excludeEventId: editingTocataId || undefined,
+      clases,
+      tocatas,
+      alumnos,
+    });
+  }, [fecha, horaInicio, horaFin, editingTocataId, clases, tocatas, alumnos]);
+
   const handleTestNotification = async () => {
     setIsTestingNotification(true);
     setTestFeedback(null);
@@ -225,7 +281,11 @@ export const TocataModal: React.FC<TocataModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pending.current) return;
+    if (pending.current) {
+      setOperationError("Ya hay una operación de guardado en curso. Espera la respuesta o cierra el formulario.");
+      formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     if (!validate()) {
       setOperationError("Por favor completa los campos obligatorios marcados en rojo.");
       formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -234,6 +294,19 @@ export const TocataModal: React.FC<TocataModalProps> = ({
     pending.current = true;
     setSaving(true);
     setOperationError(null);
+    setShowTimeoutWarning(false);
+
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    timerRef.current = setTimeout(() => {
+      setSaving(false);
+      setShowTimeoutWarning(true);
+      // pending.current PERMANECE en true para evitar dobles envíos
+    }, 20000);
+
     try {
       const parsedHonorarios = parseCLPString(honorarios);
 
@@ -242,6 +315,10 @@ export const TocataModal: React.FC<TocataModalProps> = ({
       const wasEnabled = Boolean(tocataToEdit?.googleCalendar?.enabled);
 
       if (syncWithGoogle && !wasEnabled && !isCalendarAuthorized) {
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
         setOperationError("Debes autorizar Google Calendar para activar la sincronización, o desactiva la casilla.");
         formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
@@ -304,12 +381,25 @@ export const TocataModal: React.FC<TocataModalProps> = ({
         );
       }
 
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+
       onClose();
     } catch (error) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       console.error("Error al guardar tocata:", error);
       setOperationError(agendaCrudErrorMessage(error));
       formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } finally {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       pending.current = false;
       setSaving(false);
     }
@@ -508,7 +598,53 @@ export const TocataModal: React.FC<TocataModalProps> = ({
             </p>
           )}
 
-          {/* Lugar y Ciudad */}
+          {/* Banner de solapamiento de horario (HCI Alerta no bloqueante) */}
+          {scheduleConflict && (
+            <div
+              id="banner-conflicto-horario-tocata"
+              className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-xl flex items-start gap-2.5 text-amber-200"
+            >
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-0.5">
+                <p className="font-semibold text-amber-300">
+                  Advertencia: Posible solapamiento de horario
+                </p>
+                <p className="text-slate-300 leading-relaxed">
+                  Coincide con {scheduleConflict.tipo === "clase" ? "la clase de" : "la fecha DJ"}{" "}
+                  <strong className="text-white font-semibold">{scheduleConflict.nombre}</strong> ({scheduleConflict.horaInicio} - {scheduleConflict.horaFin}).
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Progressive Disclosure: Acordeón para campos secundarios (Ley de Hick) */}
+          <div className="pt-1">
+            <button
+              type="button"
+              id="btn-toggle-detalles-tocata"
+              onClick={() => setShowOptionalDetails(!showOptionalDetails)}
+              className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-950 hover:bg-slate-900 border border-slate-800 text-xs font-medium text-slate-300 transition-colors cursor-pointer select-none"
+            >
+              <span className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+                <span>
+                  {showOptionalDetails
+                    ? "Ocultar opciones adicionales"
+                    : "Más opciones (locación, honorarios, notas, alertas, calendar)"}
+                </span>
+              </span>
+              <span
+                className={`text-[10px] text-slate-400 transition-transform duration-200 inline-block ${
+                  showOptionalDetails ? "rotate-180" : ""
+                }`}
+              >
+                ▼
+              </span>
+            </button>
+
+            {showOptionalDetails && (
+              <div className="mt-3 space-y-4 pt-1">
+                {/* Lugar y Ciudad */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="tocata-lugar" className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -691,6 +827,9 @@ export const TocataModal: React.FC<TocataModalProps> = ({
             onRetry={editingTocataId ? handleRetrySync : undefined}
             isRetrying={isRetryingSync}
           />
+              </div>
+            )}
+          </div>
 
           {operationError && (
             <div className="pt-2">
@@ -701,41 +840,23 @@ export const TocataModal: React.FC<TocataModalProps> = ({
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-800 gap-2 flex-wrap">
-            {isEditing ? (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  id="btn-eliminar-tocata"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  disabled={saving}
-                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3 py-2 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-900/50 rounded-lg transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Eliminar
-                </button>
-                <button
-                  type="button"
-                  id="btn-duplicar-tocata"
-                  onClick={handleDuplicate}
-                  disabled={saving}
-                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-200 hover:text-slate-50 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-colors active:scale-[0.98] shadow-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  <Copy className="w-4 h-4 text-slate-400" />
-                  Duplicar
-                </button>
-              </div>
-            ) : (
-              <div />
-            )}
+          {showTimeoutWarning && (
+            <div className="pt-2">
+              <SaveTimeoutWarning
+                id="tocata-timeout-warning"
+                onDismiss={() => setShowTimeoutWarning(false)}
+              />
+            </div>
+          )}
 
-            <div className="flex items-center gap-2 ml-auto">
+          {/* Actions: [Guardar] [Cancelar] a la izquierda con espacio inferior de seguridad */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-4 pb-12 sm:pb-2 border-t border-slate-800 gap-3">
+            <div className="flex items-center justify-start gap-2.5 flex-wrap">
               <button
                 type="submit"
                 disabled={saving}
                 id="btn-guardar-tocata"
-                className="inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white rounded-lg transition-colors shadow-sm cursor-pointer min-w-[130px]"
+                className="inline-flex items-center justify-center gap-2 min-h-[42px] px-5 py-2 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white rounded-xl transition-colors shadow-sm cursor-pointer min-w-[140px] active:scale-[0.98]"
               >
                 {saving ? (
                   <>
@@ -753,11 +874,36 @@ export const TocataModal: React.FC<TocataModalProps> = ({
                 id="btn-cancelar-tocata"
                 onClick={closeWhenIdle}
                 disabled={saving}
-                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer"
+                className="min-h-[42px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
             </div>
+
+            {isEditing && (
+              <div className="flex items-center justify-start sm:justify-end gap-2 sm:ml-auto">
+                <button
+                  type="button"
+                  id="btn-duplicar-tocata"
+                  onClick={handleDuplicate}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-200 hover:text-slate-50 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-xl transition-colors active:scale-[0.98] shadow-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <Copy className="w-4 h-4 text-slate-400" />
+                  Duplicar
+                </button>
+                <button
+                  type="button"
+                  id="btn-eliminar-tocata"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-900/50 rounded-xl transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Eliminar
+                </button>
+              </div>
+            )}
           </div>
         </form>
       </Modal>

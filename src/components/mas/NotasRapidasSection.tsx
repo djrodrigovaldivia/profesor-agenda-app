@@ -366,12 +366,12 @@ export const NotasRapidasSection: React.FC = () => {
             </button>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/70">
+          {/* Actions: Alineados a la izquierda para evitar colisión con sellos flotantes */}
+          <div className="flex items-center justify-start gap-2 pt-2 border-t border-slate-800/70">
             <button
               type="submit"
               id="btn-guardar-nota-rapida"
-              className="inline-flex items-center gap-1 px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg transition-colors cursor-pointer active:scale-[0.98]"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Guardar nota</span>
@@ -379,7 +379,7 @@ export const NotasRapidasSection: React.FC = () => {
             <button
               type="button"
               onClick={handleCancelCreate}
-              className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+              className="px-3 py-2 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
             >
               Cancelar
             </button>
@@ -467,11 +467,11 @@ export const NotasRapidasSection: React.FC = () => {
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                  <div className="flex items-center justify-start gap-2 pt-2 border-t border-slate-800">
                     <button
                       type="button"
                       onClick={() => handleSaveEdit(nota.id)}
-                      className="inline-flex items-center gap-1 px-3 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer active:scale-[0.98]"
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>Guardar cambios</span>
@@ -479,7 +479,7 @@ export const NotasRapidasSection: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleCancelEdit}
-                      className="px-3 py-1 text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+                      className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
                     >
                       Cancelar
                     </button>

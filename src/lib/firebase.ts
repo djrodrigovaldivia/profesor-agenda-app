@@ -23,6 +23,27 @@ export const auth = getAuth(app);
 const customDbId = (firebaseConfig as unknown as { firestoreDatabaseId?: string }).firestoreDatabaseId;
 export const db = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
 
+// In browser environments, enable multi-tab indexedDB persistence asynchronously
+if (typeof window !== "undefined") {
+  import("firebase/firestore").then((firestoreModule) => {
+    try {
+      if (typeof firestoreModule.enableMultiTabIndexedDbPersistence === "function") {
+        firestoreModule.enableMultiTabIndexedDbPersistence(db).catch((err: unknown) => {
+          console.warn("Firestore multi-tab persistence warning:", err);
+        });
+      } else if (typeof firestoreModule.enableIndexedDbPersistence === "function") {
+        firestoreModule.enableIndexedDbPersistence(db).catch((err: unknown) => {
+          console.warn("Firestore indexedDb persistence warning:", err);
+        });
+      }
+    } catch (err: unknown) {
+      console.warn("Could not enable Firestore local persistence:", err);
+    }
+  }).catch(() => {
+    // Ignore dynamic import failure in non-standard runtimes
+  });
+}
+
 // Utility to detect if the app is currently running inside an iframe (e.g. AI Studio preview)
 export const isInIframe = (): boolean => {
   try {

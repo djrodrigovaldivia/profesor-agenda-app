@@ -50,5 +50,20 @@
     --sal: env(safe-area-inset-left, 0px);
     --sar: env(safe-area-inset-right, 0px);
   }
+
+  /* Mitigación del sello de agua / badge flotante de Netlify para evitar que tape botones de acción */
+  netlify-drawer,
+  .netlify-badge,
+  [data-netlify-badge],
+  [class*="netlify-badge"],
+  [id*="netlify-badge"],
+  div:has(> a[href*="netlify.com"]),
+  a[href*="netlify.com"] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
+    z-index: -1 !important;
+  }
 }
 

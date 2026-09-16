@@ -86,8 +86,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           </div>
         </div>
 
-        {/* Action buttons with 44px+ touch targets on mobile */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2.5 pt-3 border-t border-slate-800/90">
+        {/* Action buttons with 44px+ touch targets on mobile and clearance from floating badges */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-start gap-2.5 pt-3 pb-8 sm:pb-0 border-t border-slate-800/90">
           <button
             type="button"
             id="confirm-action-btn"

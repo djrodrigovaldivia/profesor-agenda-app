@@ -278,12 +278,12 @@ export const AlumnoFichaModal: React.FC<AlumnoFichaModalProps> = ({
                 onChange={(e) => setNuevaNotaTexto(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
-              <div className="flex justify-end">
+              <div className="flex justify-start">
                 <button
                   type="submit"
                   id="btn-agregar-nota"
                   disabled={!nuevaNotaTexto.trim()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors shadow-sm cursor-pointer active:scale-[0.98]"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Agregar nota

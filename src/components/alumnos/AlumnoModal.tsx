@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Alumno, TipoClase } from "../../types";
 import { useAgenda } from "../../context/AgendaContext";
 import { useAuth } from "../../context/AuthContext";
 import { Modal } from "../common/Modal";
 import { DetailedErrorBanner } from "../common/DetailedErrorBanner";
-import { executeSaveAlumno } from "./alumnoSaveHandler";
+import { SaveTimeoutWarning } from "../common/SaveTimeoutWarning";
+import { executeSaveAlumno, MENSAJE_OPERACION_EN_CURSO } from "./alumnoSaveHandler";
 
 interface AlumnoModalProps {
   isOpen: boolean;
@@ -34,11 +35,15 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+  const isOperationActiveRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
       setSubmitError(null);
       setIsSaving(false);
+      setShowTimeoutWarning(false);
+      isOperationActiveRef.current = false;
       if (alumnoToEdit) {
         if (alumnoToEdit.apellido) {
           const suffix = alumnoToEdit.apellido.toLowerCase();
@@ -127,6 +132,11 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
       ...(alumnoToEdit?.nivel ? { nivel: alumnoToEdit.nivel } : {}),
     };
 
+    if (isSaving || isOperationActiveRef.current) {
+      setSubmitError(MENSAJE_OPERACION_EN_CURSO);
+      return;
+    }
+
     await executeSaveAlumno({
       alumnoToEdit,
       payload,
@@ -138,6 +148,8 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
       onClose,
       setIsSaving,
       setSubmitError,
+      onTimeoutWarning: setShowTimeoutWarning,
+      activeRef: isOperationActiveRef,
     });
   };
 
@@ -145,7 +157,7 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={() => {
-        if (!isSaving) {
+        if (!isSaving && !isOperationActiveRef.current) {
           onClose();
         }
       }}
@@ -335,13 +347,22 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-800">
+        {showTimeoutWarning && (
+          <div className="pt-2">
+            <SaveTimeoutWarning
+              id="alumno-timeout-warning"
+              onDismiss={() => setShowTimeoutWarning(false)}
+            />
+          </div>
+        )}
+
+        {/* Actions: Alineados a la izquierda [Guardar] [Cancelar] con espacio inferior de seguridad */}
+        <div className="flex flex-wrap items-center justify-start gap-3 pt-4 pb-12 sm:pb-2 border-t border-slate-800">
           <button
             type="submit"
             id="btn-guardar-alumno"
             disabled={isSaving}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white rounded-lg transition-colors shadow-sm cursor-pointer min-w-[130px]"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white rounded-xl transition-colors shadow-sm cursor-pointer min-w-[140px] active:scale-[0.98]"
           >
             {isSaving ? (
               <>
@@ -359,7 +380,7 @@ export const AlumnoModal: React.FC<AlumnoModalProps> = ({
             id="btn-cancelar-alumno"
             onClick={onClose}
             disabled={isSaving}
-            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer"
+            className="px-4 py-2.5 text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors cursor-pointer"
           >
             Cancelar
           </button>

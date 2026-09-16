@@ -446,3 +446,205 @@ test("sanitización de mensajes de error de Firestore y red", () => {
     "Sin conexión. Comprueba tu conexión antes de guardar."
   );
 });
+
+test("protección síncrona: segundo submit bloqueado mientras la promesa inicial sigue en curso", async () => {
+  const activeRef = { current: false };
+  let addCount = 0;
+  let resolvePromise: (val: any) => void;
+  const pendingPromise = new Promise((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  const params: SaveAlumnoExecutionParams = {
+    alumnoToEdit: null,
+    payload: {
+      nombre: "Juan Perez",
+      activo: true,
+    },
+    currentUser: { uid: "user-123" },
+    isDeviceOffline: false,
+    addAlumno: async (data) => {
+      addCount++;
+      await pendingPromise;
+      return {
+        ...data,
+        id: "id-1",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    },
+    updateAlumno: async () => {},
+    onClose: () => {},
+    setIsSaving: () => {},
+    setSubmitError: () => {},
+    activeRef,
+  };
+
+  // Primer submit: arranca la promesa y activa la referencia síncrona
+  const firstSavePromise = executeSaveAlumno(params);
+  assert.equal(activeRef.current, true, "activeRef debe ser true mientras la operación está activa");
+  assert.equal(addCount, 1, "addAlumno debe haberse llamado una vez");
+
+  // Segundo submit (ej: doble click o enter inmediato): debe rebotar
+  let secondError: string | null = null;
+  const secondParams: SaveAlumnoExecutionParams = {
+    ...params,
+    setSubmitError: (err) => {
+      secondError = err;
+    },
+  };
+  const secondResult = await executeSaveAlumno(secondParams);
+
+  assert.equal(secondResult, false, "El segundo submit debe retornar false inmediatamente");
+  assert.equal(addCount, 1, "addAlumno NO debe ser llamado una segunda vez");
+  assert.equal(
+    secondError,
+    "Ya hay una operación de guardado en curso. Espera la respuesta o cierra el formulario."
+  );
+
+  // Resolver la primera promesa
+  resolvePromise!({});
+  const firstResult = await firstSavePromise;
+
+  assert.equal(firstResult, true, "El primer submit debe completarse exitosamente");
+  assert.equal(activeRef.current, false, "activeRef debe volver a false tras completarse");
+  assert.equal(addCount, 1, "addAlumno debe haberse ejecutado exactamente una sola vez en total");
+});
+
+test("protección post-timeout: después del timeout visual de 20s, un segundo submit NO duplica la escritura", async () => {
+  const activeRef = { current: false };
+  let addCount = 0;
+  let resolvePromise: (val: any) => void;
+  const pendingPromise = new Promise((resolve) => {
+    resolvePromise = resolve;
+  });
+  let timeoutFired = false;
+  let isSavingState = false;
+
+  const params: SaveAlumnoExecutionParams = {
+    alumnoToEdit: null,
+    payload: {
+      nombre: "María Lopez",
+      activo: true,
+    },
+    currentUser: { uid: "user-123" },
+    isDeviceOffline: false,
+    addAlumno: async (data) => {
+      addCount++;
+      await pendingPromise;
+      return {
+        ...data,
+        id: "id-2",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    },
+    updateAlumno: async () => {},
+    onClose: () => {},
+    setIsSaving: (s) => {
+      isSavingState = s;
+    },
+    setSubmitError: () => {},
+    onTimeoutWarning: (warn) => {
+      timeoutFired = warn;
+    },
+    activeRef,
+  };
+
+  const firstSavePromise = executeSaveAlumno(params);
+  assert.equal(activeRef.current, true);
+  assert.equal(addCount, 1);
+
+  // Simulamos que pasaron 20 segundos y se disparó el callback de timeout
+  // El callback del timeout pone isSaving en false y timeoutWarning en true,
+  // pero NUNCA debe poner activeRef en false
+  isSavingState = false;
+  timeoutFired = true;
+
+  assert.equal(isSavingState, false, "El spinner se oculta para no bloquear la pantalla");
+  assert.equal(timeoutFired, true, "El aviso de timeout se muestra");
+  assert.equal(
+    activeRef.current,
+    true,
+    "activeRef.current DEBE seguir en true para proteger la promesa en curso"
+  );
+
+  // El usuario pulsa Guardar otra vez tras el timeout
+  let secondError: string | null = null;
+  const secondResult = await executeSaveAlumno({
+    ...params,
+    setSubmitError: (err) => {
+      secondError = err;
+    },
+  });
+
+  assert.equal(secondResult, false, "El segundo submit tras el timeout debe ser rechazado");
+  assert.equal(addCount, 1, "addAlumno NO debe ejecutarse dos veces bajo ninguna circunstancia");
+  assert.equal(
+    secondError,
+    "Ya hay una operación de guardado en curso. Espera la respuesta o cierra el formulario."
+  );
+
+  // La promesa lenta finalmente responde con éxito
+  resolvePromise!({});
+  const firstResult = await firstSavePromise;
+
+  assert.equal(firstResult, true);
+  assert.equal(activeRef.current, false, "activeRef se libera únicamente tras la resolución real");
+  assert.equal(addCount, 1, "addAlumno se llamó una sola vez");
+});
+
+test("si la primera operación falla con error, activeRef se libera y permite reintentar conscientemente", async () => {
+  const activeRef = { current: false };
+  let addCount = 0;
+  let shouldFail = true;
+
+  const params: SaveAlumnoExecutionParams = {
+    alumnoToEdit: null,
+    payload: {
+      nombre: "Reintento Alumno",
+      activo: true,
+    },
+    currentUser: { uid: "user-123" },
+    isDeviceOffline: false,
+    addAlumno: async (data) => {
+      addCount++;
+      if (shouldFail) {
+        throw new Error("Error de conexión transitorio");
+      }
+      return {
+        ...data,
+        id: "id-3",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    },
+    updateAlumno: async () => {},
+    onClose: () => {},
+    setIsSaving: () => {},
+    setSubmitError: () => {},
+    activeRef,
+  };
+
+  // Primer intento: falla
+  const firstResult = await executeSaveAlumno(params);
+  assert.equal(firstResult, false, "Primer intento falla");
+  assert.equal(activeRef.current, false, "activeRef debe quedar en false tras el error");
+  assert.equal(addCount, 1);
+
+  // Segundo intento: el usuario corrige la red y reintenta
+  shouldFail = false;
+  let closed = false;
+  const secondResult = await executeSaveAlumno({
+    ...params,
+    onClose: () => {
+      closed = true;
+    },
+  });
+
+  assert.equal(secondResult, true, "Segundo intento tiene éxito");
+  assert.equal(addCount, 2, "Se ejecutó el reintento");
+  assert.equal(closed, true, "El modal se cierra una vez");
+  assert.equal(activeRef.current, false, "activeRef vuelve a quedar en false");
+});
+

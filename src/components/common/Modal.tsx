@@ -80,8 +80,8 @@ export const Modal: React.FC<ModalProps> = ({
           </button>
         </div>
 
-        {/* Body with iOS overscroll contain and safe-area padding */}
-        <div className="p-4 sm:p-5 overflow-y-auto flex-1 overscroll-contain pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        {/* Body with iOS overscroll contain and ample bottom clearance so floating badges/safe areas never block buttons */}
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 overscroll-contain pb-28 sm:pb-8">
           {children}
         </div>
       </div>

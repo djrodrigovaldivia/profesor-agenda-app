@@ -11,7 +11,6 @@ import { BottomNav, DesktopSidebar } from "./components/navigation/Nav";
 import { AgendaView } from "./components/agenda/AgendaView";
 import { CalendarView } from "./components/calendar/CalendarView";
 import { AlumnosView } from "./components/alumnos/AlumnosView";
-import { MasView } from "./components/mas/MasView";
 import { ClaseModal } from "./components/modals/ClaseModal";
 import { TocataModal } from "./components/modals/TocataModal";
 import { AlumnoFichaModal } from "./components/alumnos/AlumnoFichaModal";
@@ -22,6 +21,11 @@ import { LoginScreen } from "./components/auth/LoginScreen";
 import { MigrationModal } from "./components/modals/MigrationModal";
 import { Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+
+// Code splitting para vistas pesadas de configuración y exportación
+const MasView = React.lazy(() =>
+  import("./components/mas/MasView").then((m) => ({ default: m.MasView }))
+);
 
 function AgendaAppContent() {
   const { currentUser, loading } = useAuth();
@@ -158,7 +162,18 @@ function AgendaAppContent() {
               />
             )}
 
-            {activeTab === "mas" && <MasView />}
+            {activeTab === "mas" && (
+              <React.Suspense
+                fallback={
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                    <p className="text-xs text-slate-400">Cargando Más opciones...</p>
+                  </div>
+                }
+              >
+                <MasView />
+              </React.Suspense>
+            )}
           </motion.div>
         </AnimatePresence>
       </main>

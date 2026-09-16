@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test --experimental-test-module-mocks src/services/*.test.ts src/utils/*.test.ts src/context/*.test.tsx src/components/**/*.test.ts"
+    "test": "node --import tsx --experimental-test-module-mocks --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\" \"src/**/*.spec.ts\" \"src/**/*.spec.tsx\""
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

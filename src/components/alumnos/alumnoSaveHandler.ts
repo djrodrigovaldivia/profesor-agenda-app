@@ -72,7 +72,12 @@ export interface SaveAlumnoExecutionParams {
   onClose: () => void;
   setIsSaving: (saving: boolean) => void;
   setSubmitError: (error: string | null) => void;
+  onTimeoutWarning?: (timedOut: boolean) => void;
+  activeRef?: { current: boolean };
 }
+
+export const MENSAJE_OPERACION_EN_CURSO =
+  "Ya hay una operación de guardado en curso. Espera la respuesta o cierra el formulario.";
 
 /**
  * Handles validation, pre-conditions, error handling and lifecycle states for saving an alumno.
@@ -87,8 +92,9 @@ export interface SaveAlumnoExecutionParams {
  * 7. Sanitizes Firestore errors and renders inside modal.
  * 8. Keeps modal open when save fails.
  * 9. Closes modal only after promise successfully resolves.
- * 10. No fake timeouts to declare success.
+ * 10. Visual safety timeout (~20s): re-enables UI if server hangs without declaring false failure.
  * 11. No local-only saves without real offline persistence.
+ * 12. Prevents duplicate submission via activeRef while initial save promise remains in flight.
  */
 export async function executeSaveAlumno({
   alumnoToEdit,
@@ -101,8 +107,17 @@ export async function executeSaveAlumno({
   onClose,
   setIsSaving,
   setSubmitError,
+  onTimeoutWarning,
+  activeRef,
 }: SaveAlumnoExecutionParams): Promise<boolean> {
+  // Requirement 12: Protección síncrona contra doble submit mientras la promesa original sigue en vuelo
+  if (activeRef?.current) {
+    setSubmitError(MENSAJE_OPERACION_EN_CURSO);
+    return false;
+  }
+
   setSubmitError(null);
+  onTimeoutWarning?.(false);
 
   // Requirement 5: Usuario no autenticado
   if (!currentUser) {
@@ -116,8 +131,20 @@ export async function executeSaveAlumno({
     return false;
   }
 
+  // Marcamos la operación como activa antes de iniciar la escritura
+  if (activeRef) {
+    activeRef.current = true;
+  }
+
   // Requirement 1: Mostrar estado "Guardando..."
   setIsSaving(true);
+
+  // Requirement 10: Temporizador de seguridad de 20 segundos
+  // Solo oculta el spinner y muestra el aviso. NO libera activeRef.current para evitar duplicados.
+  let timerId: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    setIsSaving(false);
+    onTimeoutWarning?.(true);
+  }, 20000);
 
   try {
     if (alumnoToEdit) {
@@ -129,14 +156,31 @@ export async function executeSaveAlumno({
       }
     }
 
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+
     // Requirement 9: Cerrar modal solo tras éxito real
     onClose();
     return true;
   } catch (err: unknown) {
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
     // Requirement 7 & 8: Capturar error, sanitizarlo y mantener modal abierto
     setSubmitError(sanitizeAlumnoErrorMessage(err));
     return false;
   } finally {
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+    // Liberar referencia síncrona solo al terminar la promesa real (éxito o error)
+    if (activeRef) {
+      activeRef.current = false;
+    }
     // Requirement 2 & 4: Re-habilitar botón siempre en finally
     setIsSaving(false);
   }

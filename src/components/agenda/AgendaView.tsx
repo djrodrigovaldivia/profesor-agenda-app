@@ -30,6 +30,7 @@ import {
   Calendar as CalendarIcon,
   ChevronDown,
   AlertCircle,
+  BookOpen,
 } from "lucide-react";
 
 interface AgendaViewProps {
@@ -129,6 +130,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   });
 
   const isTodos = selectedFilters.length === 0;
+  const isSoloClases =
+    selectedFilters.length === 2 &&
+    selectedFilters.includes("alma") &&
+    selectedFilters.includes("escalera");
+  const isSoloTocatas =
+    selectedFilters.length === 1 && selectedFilters.includes("dj");
 
   useEffect(() => {
     const handleImported = () => {
@@ -165,6 +172,35 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       console.error("Error saving filters to storage", e);
     }
   }, []);
+
+  const handleToggleSoloClases = useCallback(() => {
+    if (isSoloClases) {
+      handleToggleTodos();
+    } else {
+      setSelectedFilters(["alma", "escalera"]);
+      try {
+        localStorage.setItem(
+          FILTERS_STORAGE_KEY,
+          JSON.stringify(["alma", "escalera"])
+        );
+      } catch (e) {
+        console.error("Error saving filters to storage", e);
+      }
+    }
+  }, [isSoloClases, handleToggleTodos]);
+
+  const handleToggleSoloTocatas = useCallback(() => {
+    if (isSoloTocatas) {
+      handleToggleTodos();
+    } else {
+      setSelectedFilters(["dj"]);
+      try {
+        localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(["dj"]));
+      } catch (e) {
+        console.error("Error saving filters to storage", e);
+      }
+    }
+  }, [isSoloTocatas, handleToggleTodos]);
 
   const handleToggleCategory = useCallback(
     (cat: SpecificFilter) => {
@@ -842,7 +878,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         </div>
       )}
 
-      {/* Filter Chips Bar (Filtrado de la lista cronológica) */}
+      {/* Filter Chips Bar (Filtrado de la lista cronológica con Modos de Vida y Academias) */}
       <div
         role="group"
         aria-label="Filtros de actividades"
@@ -863,6 +899,41 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           Todos
         </button>
 
+        {/* Chip: Solo Clases (Modo Docencia) */}
+        <button
+          type="button"
+          id="filter-chip-solo-clases"
+          aria-pressed={isSoloClases}
+          onClick={handleToggleSoloClases}
+          className={`min-h-[44px] min-w-[44px] px-3.5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all shrink-0 border flex items-center gap-2 select-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+            isSoloClases
+              ? "bg-sky-500/20 text-sky-300 border-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.2)] font-semibold"
+              : "bg-slate-900/90 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-slate-100 hover:bg-slate-850"
+          }`}
+        >
+          <BookOpen className="w-4 h-4 text-sky-400 shrink-0" />
+          <span>Solo Clases</span>
+        </button>
+
+        {/* Chip: Solo Tocatas (Modo DJ) */}
+        <button
+          type="button"
+          id="filter-chip-dj"
+          aria-pressed={isSoloTocatas}
+          onClick={handleToggleSoloTocatas}
+          className={`min-h-[44px] min-w-[44px] px-3.5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all shrink-0 border flex items-center gap-2 select-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f8995d] focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+            isSoloTocatas
+              ? "bg-[#f8995d]/20 text-[#f8995d] border-[#f8995d] shadow-[0_0_12px_rgba(248,153,93,0.2)] font-semibold"
+              : "bg-slate-900/90 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-slate-100 hover:bg-slate-850"
+          }`}
+        >
+          <Radio className="w-4 h-4 text-[#f8995d] shrink-0" />
+          <span>Solo Tocatas</span>
+        </button>
+
+        {/* Separador visual sutil entre modos generales y academias */}
+        <div className="h-6 w-px bg-slate-800 shrink-0 mx-0.5" />
+
         {/* Chip: ALMA */}
         <button
           type="button"
@@ -870,7 +941,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           aria-pressed={!isTodos && selectedFilters.includes("alma")}
           onClick={() => handleToggleCategory("alma")}
           style={
-            !isTodos && selectedFilters.includes("alma")
+            !isTodos && selectedFilters.includes("alma") && !isSoloClases
               ? {
                   backgroundColor: "rgba(159, 198, 231, 0.16)",
                   borderColor: "#9fc6e7",
@@ -879,7 +950,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               : undefined
           }
           className={`min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all shrink-0 border flex items-center gap-2.5 select-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9fc6e7] focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
-            !isTodos && selectedFilters.includes("alma")
+            !isTodos && selectedFilters.includes("alma") && !isSoloClases
               ? "shadow-[0_0_12px_rgba(159,198,231,0.15)] font-semibold"
               : "bg-slate-900/90 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-slate-100 hover:bg-slate-850"
           }`}
@@ -901,7 +972,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           aria-pressed={!isTodos && selectedFilters.includes("escalera")}
           onClick={() => handleToggleCategory("escalera")}
           style={
-            !isTodos && selectedFilters.includes("escalera")
+            !isTodos && selectedFilters.includes("escalera") && !isSoloClases
               ? {
                   backgroundColor: "rgba(167, 220, 158, 0.16)",
                   borderColor: "#a7dc9e",
@@ -910,7 +981,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               : undefined
           }
           className={`min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all shrink-0 border flex items-center gap-2.5 select-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a7dc9e] focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
-            !isTodos && selectedFilters.includes("escalera")
+            !isTodos && selectedFilters.includes("escalera") && !isSoloClases
               ? "shadow-[0_0_12px_rgba(167,220,158,0.15)] font-semibold"
               : "bg-slate-900/90 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-slate-100 hover:bg-slate-850"
           }`}
@@ -923,37 +994,6 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             className="w-2 h-2 rounded-full transition-colors shrink-0"
           />
           La Escalera
-        </button>
-
-        {/* Chip: Fecha DJ */}
-        <button
-          type="button"
-          id="filter-chip-dj"
-          aria-pressed={!isTodos && selectedFilters.includes("dj")}
-          onClick={() => handleToggleCategory("dj")}
-          style={
-            !isTodos && selectedFilters.includes("dj")
-              ? {
-                  backgroundColor: "rgba(248, 153, 93, 0.16)",
-                  borderColor: "#f8995d",
-                  color: "#f8995d",
-                }
-              : undefined
-          }
-          className={`min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all shrink-0 border flex items-center gap-2.5 select-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f8995d] focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
-            !isTodos && selectedFilters.includes("dj")
-              ? "shadow-[0_0_12px_rgba(248,153,93,0.15)] font-semibold"
-              : "bg-slate-900/90 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-slate-100 hover:bg-slate-850"
-          }`}
-        >
-          <span
-            style={{
-              backgroundColor:
-                !isTodos && selectedFilters.includes("dj") ? "#f8995d" : "#64748b",
-            }}
-            className="w-2 h-2 rounded-full transition-colors shrink-0"
-          />
-          Fecha DJ
         </button>
       </div>
 

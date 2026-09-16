@@ -4,6 +4,7 @@ import { useAgenda, agendaCrudErrorMessage, type AgendaAuthorizedLink } from "..
 import { useAuth } from "../../context/AuthContext";
 import { Modal } from "../common/Modal";
 import { DetailedErrorBanner } from "../common/DetailedErrorBanner";
+import { SaveTimeoutWarning } from "../common/SaveTimeoutWarning";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { AlumnoModal } from "../alumnos/AlumnoModal";
 import { GoogleCalendarSyncToggle } from "../common/GoogleCalendarSyncToggle";
@@ -20,6 +21,7 @@ import {
   CheckCircle2,
   UserPlus,
 } from "lucide-react";
+import { detectScheduleConflict } from "../../utils/conflictUtils";
 import {
   getNotificationPermission,
   requestNotificationPermission,
@@ -45,6 +47,7 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
   const {
     alumnos,
     clases = [],
+    tocatas = [],
     captureEditPrecondition,
     addClase,
     updateClase,
@@ -59,6 +62,16 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
     () => claseToEdit?.id || null
   );
   const [isDuplicating, setIsDuplicating] = useState(false);
+
+  // Progressive Disclosure: accordion for optional fields (Hick's Law)
+  const [showOptionalDetails, setShowOptionalDetails] = useState<boolean>(() => {
+    return Boolean(
+      claseToEdit?.tema ||
+      claseToEdit?.notas ||
+      claseToEdit?.recordatorio?.activo ||
+      claseToEdit?.googleCalendar?.enabled
+    );
+  });
 
   const [alumnoId, setAlumnoId] = useState(
     () =>
@@ -104,6 +117,9 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+  const isOperationActiveRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Google Calendar Sync state
   const [syncWithGoogle, setSyncWithGoogle] = useState(() => Boolean(claseToEdit?.googleCalendar?.enabled));
@@ -151,6 +167,12 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
         setSubmitError(null);
         setIsSubmitting(false);
         setIsDeleting(false);
+        setShowTimeoutWarning(false);
+        isOperationActiveRef.current = false;
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
 
         if (claseToEdit) {
           setEditingClaseId(claseToEdit.id);
@@ -219,6 +241,15 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
     prevOpenRef.current = isOpen;
   }, [isOpen, claseToEdit, defaultAlumnoId, defaultFecha, alumnos]);
 
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleDuplicate = () => {
     // Switch to creation mode with cloned data, leaving date empty and mandatory
     setEditingClaseId(null);
@@ -269,6 +300,19 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
+
+  // Schedule Collision Detection (HCI Non-blocking warning banner)
+  const scheduleConflict = useMemo(() => {
+    return detectScheduleConflict({
+      fecha,
+      horaInicio,
+      horaFin,
+      excludeEventId: editingClaseId || undefined,
+      clases,
+      tocatas,
+      alumnos,
+    });
+  }, [fecha, horaInicio, horaFin, editingClaseId, clases, tocatas, alumnos]);
 
   const calculatedTrigger = useMemo(() => {
     if (!fecha || !horaInicio || !recordatorioActivo) return null;
@@ -355,10 +399,16 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitError(null);
 
-    // Precondición de atomicidad: evitar múltiples envíos concurrentes
+    // Precondición de atomicidad y prevención de doble guardado mientras la promesa siga activa
+    if (isOperationActiveRef.current) {
+      setSubmitError("Ya hay una operación de guardado en curso. Espera la respuesta o cierra el formulario.");
+      return;
+    }
+
     if (isSubmitting || isDeleting) return;
+
+    setSubmitError(null);
 
     if (!validate()) {
       setSubmitError("Por favor completa los campos obligatorios marcados en rojo.");
@@ -409,7 +459,21 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
           }
         : undefined;
 
+    isOperationActiveRef.current = true;
     setIsSubmitting(true);
+    setShowTimeoutWarning(false);
+
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    timerRef.current = setTimeout(() => {
+      setIsSubmitting(false);
+      setShowTimeoutWarning(true);
+      // isOperationActiveRef.current PERMANECE en true para evitar dobles envíos
+    }, 20000);
+
     try {
       if (editingClaseId) {
         await updateClase(editingClaseId, payload, precondition);
@@ -422,11 +486,25 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
       } else {
         await addClase(payload, authorizedLink);
       }
+
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       onClose();
     } catch (err) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       console.error("Error al guardar la clase:", err);
       setSubmitError(agendaCrudErrorMessage(err));
     } finally {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      isOperationActiveRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -722,7 +800,43 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
             </p>
           )}
 
-          {/* Tema */}
+          {/* Banner de solapamiento de horario (HCI Alerta no bloqueante) */}
+          {scheduleConflict && (
+            <div
+              id="banner-conflicto-horario-clase"
+              className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-xl flex items-start gap-2.5 text-amber-200"
+            >
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-0.5">
+                <p className="font-semibold text-amber-300">
+                  Advertencia: Posible solapamiento de horario
+                </p>
+                <p className="text-slate-300 leading-relaxed">
+                  Coincide con {scheduleConflict.tipo === "clase" ? "la clase de" : "la fecha DJ"}{" "}
+                  <strong className="text-white font-semibold">{scheduleConflict.nombre}</strong> ({scheduleConflict.horaInicio} - {scheduleConflict.horaFin}).
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Estado */}
+          <div>
+            <label htmlFor="clase-estado" className="block text-xs font-medium text-slate-300 mb-1.5">
+              Estado de la clase
+            </label>
+            <select
+              id="clase-estado"
+              value={estado}
+              onChange={(e) => setEstado(e.target.value as "programada" | "realizada" | "cancelada")}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="programada">Programada</option>
+              <option value="realizada">Realizada</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+          </div>
+
+          {/* Tema de la clase */}
           <div>
             <label htmlFor="clase-tema" className="block text-xs font-medium text-slate-300 mb-1.5">
               Tema de la clase (opcional)
@@ -744,40 +858,50 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
             )}
           </div>
 
-          {/* Notas pedagógicas */}
-          <div>
-            <label htmlFor="clase-notas" className="block text-xs font-medium text-slate-300 mb-1.5">
-              Notas y observaciones (opcional)
-            </label>
-            <textarea
-              id="clase-notas"
-              rows={2}
-              maxLength={1000}
-              placeholder="Material requerido, tareas previas, ejercicios específicos..."
-              value={notas}
-              onChange={(e) => setNotas(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            />
-          </div>
-
-          {/* Estado */}
-          <div>
-            <label htmlFor="clase-estado" className="block text-xs font-medium text-slate-300 mb-1.5">
-              Estado de la clase
-            </label>
-            <select
-              id="clase-estado"
-              value={estado}
-              onChange={(e) => setEstado(e.target.value as "programada" | "realizada" | "cancelada")}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          {/* Progressive Disclosure: Acordeón para campos secundarios (Ley de Hick) */}
+          <div className="pt-1">
+            <button
+              type="button"
+              id="btn-toggle-detalles-clase"
+              onClick={() => setShowOptionalDetails(!showOptionalDetails)}
+              className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-950 hover:bg-slate-900 border border-slate-800 text-xs font-medium text-slate-300 transition-colors cursor-pointer select-none"
             >
-              <option value="programada">Programada</option>
-              <option value="realizada">Realizada</option>
-              <option value="cancelada">Cancelada</option>
-            </select>
-          </div>
+              <span className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+                <span>
+                  {showOptionalDetails
+                    ? "Ocultar opciones adicionales"
+                    : "Más opciones (notas pedagógicas, recordatorios, calendar)"}
+                </span>
+              </span>
+              <span
+                className={`text-[10px] text-slate-400 transition-transform duration-200 inline-block ${
+                  showOptionalDetails ? "rotate-180" : ""
+                }`}
+              >
+                ▼
+              </span>
+            </button>
 
-          {/* Notificación Local Anticipada */}
+            {showOptionalDetails && (
+              <div className="mt-3 space-y-4 pt-1">
+                {/* Notas pedagógicas */}
+                <div>
+                  <label htmlFor="clase-notas" className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Notas y observaciones (opcional)
+                  </label>
+                  <textarea
+                    id="clase-notas"
+                    rows={2}
+                    maxLength={1000}
+                    placeholder="Material requerido, tareas previas, ejercicios específicos..."
+                    value={notas}
+                    onChange={(e) => setNotas(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  />
+                </div>
+
+                {/* Notificación Local Anticipada */}
           <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950/90 border border-slate-800 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -994,6 +1118,9 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
             onRetry={editingClaseId ? handleRetrySync : undefined}
             isRetrying={isRetryingSync}
           />
+              </div>
+            )}
+          </div>
 
           {submitError && (
             <div className="pt-2">
@@ -1004,41 +1131,23 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-800 gap-2 flex-wrap">
-            {isEditing ? (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  id="btn-eliminar-clase"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  disabled={isSubmitting || isDeleting}
-                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3 py-2 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-900/50 rounded-lg transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {isDeleting ? "Eliminando..." : "Eliminar"}
-                </button>
-                <button
-                  type="button"
-                  id="btn-duplicar-clase"
-                  onClick={handleDuplicate}
-                  disabled={isSubmitting || isDeleting}
-                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-200 hover:text-slate-50 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-colors active:scale-[0.98] shadow-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  <Copy className="w-4 h-4 text-slate-400" />
-                  Duplicar
-                </button>
-              </div>
-            ) : (
-              <div />
-            )}
+          {showTimeoutWarning && (
+            <div className="pt-2">
+              <SaveTimeoutWarning
+                id="clase-timeout-warning"
+                onDismiss={() => setShowTimeoutWarning(false)}
+              />
+            </div>
+          )}
 
-            <div className="flex items-center gap-2 ml-auto">
+          {/* Actions: [Guardar] [Cancelar] a la izquierda con espacio inferior de seguridad */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-4 pb-12 sm:pb-2 border-t border-slate-800 gap-3">
+            <div className="flex items-center justify-start gap-2.5 flex-wrap">
               <button
                 type="submit"
                 id="btn-guardar-clase"
                 disabled={isSubmitting || isDeleting || alumnosDisponibles.length === 0}
-                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm cursor-pointer disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                className="min-h-[42px] px-5 py-2 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl transition-colors shadow-sm cursor-pointer disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 min-w-[140px] active:scale-[0.98]"
               >
                 {isSubmitting ? (
                   <>
@@ -1056,11 +1165,36 @@ export const ClaseModal: React.FC<ClaseModalProps> = ({
                 id="btn-cancelar-clase"
                 onClick={onClose}
                 disabled={isSubmitting || isDeleting}
-                className="min-h-[40px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                className="min-h-[42px] px-4 py-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
               >
                 Cancelar
               </button>
             </div>
+
+            {isEditing && (
+              <div className="flex items-center justify-start sm:justify-end gap-2 sm:ml-auto">
+                <button
+                  type="button"
+                  id="btn-duplicar-clase"
+                  onClick={handleDuplicate}
+                  disabled={isSubmitting || isDeleting}
+                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-200 hover:text-slate-50 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-xl transition-colors active:scale-[0.98] shadow-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <Copy className="w-4 h-4 text-slate-400" />
+                  Duplicar
+                </button>
+                <button
+                  type="button"
+                  id="btn-eliminar-clase"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={isSubmitting || isDeleting}
+                  className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-900/50 rounded-xl transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {isDeleting ? "Eliminando..." : "Eliminar"}
+                </button>
+              </div>
+            )}
           </div>
         </form>
       </Modal>
