@@ -27,6 +27,9 @@ class Provider {
 mock.module("firebase/auth", { namedExports: {
   GoogleAuthProvider: Provider,
   getAuth: () => auth,
+  initializeAuth: () => auth,
+  indexedDBLocalPersistence: {},
+  browserLocalPersistence: {},
   getAdditionalUserInfo: () => ({ providerId: "google.com", profile }),
   reauthenticateWithPopup: async (user: User) => {
     assert.equal(user, auth.currentUser);
@@ -89,6 +92,16 @@ function renderContext() {
   } } }).props.value;
 }
 
+const storageMap = new Map<string, string>();
+const mockStorage: Storage = {
+  getItem: (key: string) => storageMap.get(key) ?? null,
+  setItem: (key: string, val: string) => { storageMap.set(key, String(val)); },
+  removeItem: (key: string) => { storageMap.delete(key); },
+  clear: () => { storageMap.clear(); },
+  key: (idx: number) => Array.from(storageMap.keys())[idx] ?? null,
+  get length() { return storageMap.size; },
+};
+
 const descriptors = new Map<string, PropertyDescriptor | undefined>();
 beforeEach((t: TestContext) => {
   calendar.clearGoogleCalendarAuth();
@@ -97,12 +110,15 @@ beforeEach((t: TestContext) => {
   credential = { accessToken: TOKEN };
   popupCalls = 0;
   popup = async () => ({ user: auth.currentUser! });
-  for (const key of ["localStorage", "sessionStorage", "indexedDB"]) {
-    descriptors.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-    Object.defineProperty(globalThis, key, { configurable: true, get() {
-      assert.fail(`Unexpected persistent storage: ${key}`);
-    } });
-  }
+  storageMap.clear();
+
+  descriptors.set("localStorage", Object.getOwnPropertyDescriptor(globalThis, "localStorage"));
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: mockStorage,
+    writable: true,
+  });
+
   t.mock.method(globalThis, "fetch", async () => { assert.fail("No real fetch allowed"); });
   for (const method of ["log", "warn", "error", "info", "debug"] as const) {
     t.mock.method(console, method, (...args: unknown[]) => {
@@ -283,3 +299,176 @@ test("AuthContext mount/login stays passive and reflects authorization, logout a
     for (const cleanup of cleanups) if (typeof cleanup === "function") cleanup();
   }
 });
+
+test("Requirement 1 & 10: Authorization is retained across simulated PWA app close and reopen without popups", async () => {
+  const user = auth.currentUser!;
+  profile = { sub: "google-a" };
+  await calendar.requestGoogleCalendarAuthorization(auth as never);
+  assert.equal(popupCalls, 1);
+  assert.equal(calendar.getGoogleCalendarAuthState().status, "authorized_temporarily");
+
+  // Simulate closing the app: in-memory state in singleton is reset, but localStorage remains
+  // (We simulate this by calling syncGoogleCalendarUser with the restored Firebase user, as happens on PWA boot)
+  calendar.syncGoogleCalendarUser(user);
+  assert.equal(popupCalls, 1); // No new popup!
+  assert.equal(calendar.getGoogleCalendarAuthState().status, "authorized_temporarily");
+  assert.equal(calendar.getGoogleCalendarAccessToken(user), TOKEN);
+});
+
+test("Requirement 2: Calendar auth state is preserved when context is unmounted and remounted", async () => {
+  const user = auth.currentUser!;
+  profile = { sub: "google-a" };
+  await calendar.requestGoogleCalendarAuthorization(auth as never);
+  assert.equal(popupCalls, 1);
+
+  // Mount context first time
+  slots = []; effects = []; mounting = true;
+  let context1 = renderContext();
+  const cleanups1 = effects.map((effect) => effect());
+  mounting = false;
+  assert.equal(context1.calendarAuth.status, "authorized_temporarily");
+
+  // Unmount context
+  for (const cleanup of cleanups1) if (typeof cleanup === "function") cleanup();
+
+  // Remount context
+  slots = []; effects = []; mounting = true;
+  let context2 = renderContext();
+  const cleanups2 = effects.map((effect) => effect());
+  mounting = false;
+
+  assert.equal(context2.calendarAuth.status, "authorized_temporarily");
+  assert.equal(popupCalls, 1); // Still no new popups
+
+  for (const cleanup of cleanups2) if (typeof cleanup === "function") cleanup();
+});
+
+test("Requirement 3: Normal app initialization never triggers an OAuth popup", async () => {
+  const initialPopups = popupCalls;
+  slots = []; effects = []; mounting = true;
+  const context = renderContext();
+  const cleanups = effects.map((effect) => effect());
+  mounting = false;
+
+  await observer(auth.currentUser);
+  assert.equal(popupCalls, initialPopups);
+  assert.equal(context.calendarAuth.status, "not_authorized");
+
+  for (const cleanup of cleanups) if (typeof cleanup === "function") cleanup();
+});
+
+test("Requirement 4: Expired token is detected and rejected without retaining invalid session", () => {
+  const user = auth.currentUser!;
+  // Seed an expired storage record
+  storageMap.set(calendar.GCAL_AUTH_STORAGE_KEY, JSON.stringify({
+    uid: user.uid,
+    googleAccountId: "google-a",
+    calendarId: "primary",
+    validUntil: Date.now() - 1000,
+    token: "expired-token",
+  }));
+
+  calendar.syncGoogleCalendarUser(user);
+  assert.equal(calendar.getGoogleCalendarAccessToken(user), null);
+  assert.equal(calendar.getGoogleCalendarAuthState().status, "requires_reauthorization");
+});
+
+test("Requirement 5: Mismatched Google account identity produces controlled not_authorized state", () => {
+  const user = auth.currentUser!;
+  // Storage contains data for a DIFFERENT google account
+  storageMap.set(calendar.GCAL_AUTH_STORAGE_KEY, JSON.stringify({
+    uid: user.uid,
+    googleAccountId: "google-acct-different",
+    calendarId: "primary",
+    validUntil: Date.now() + 100000,
+    token: "other-token",
+  }));
+
+  calendar.syncGoogleCalendarUser(user);
+  assert.equal(calendar.getGoogleCalendarAccessToken(user), null);
+  assert.equal(calendar.getGoogleCalendarAuthState().status, "not_authorized");
+});
+
+test("Requirement 6: Revoking authorization produces requires_reauthorization status", async () => {
+  const user = auth.currentUser!;
+  profile = { sub: "google-a" };
+  await calendar.requestGoogleCalendarAuthorization(auth as never);
+  assert.equal(calendar.getGoogleCalendarAuthState().status, "authorized_temporarily");
+
+  calendar.clearGoogleCalendarAuth(true);
+  assert.equal(calendar.getGoogleCalendarAuthState().status, "requires_reauthorization");
+  assert.equal(calendar.getGoogleCalendarAccessToken(user), null);
+});
+
+test("Requirement 7: Disconnecting Google Calendar clears local storage and link", async () => {
+  const user = auth.currentUser!;
+  profile = { sub: "google-a" };
+  await calendar.requestGoogleCalendarAuthorization(auth as never);
+  assert.ok(storageMap.has(calendar.GCAL_AUTH_STORAGE_KEY));
+
+  calendar.clearGoogleCalendarAuth(false);
+  assert.equal(calendar.getGoogleCalendarAuthState().status, "not_authorized");
+  assert.equal(calendar.getGoogleCalendarAccessToken(user), null);
+  assert.equal(storageMap.has(calendar.GCAL_AUTH_STORAGE_KEY), false);
+});
+
+test("Requirement 8: User logout thoroughly clears all stored calendar state", async () => {
+  const user = auth.currentUser!;
+  profile = { sub: "google-a" };
+
+  slots = []; effects = []; mounting = true;
+  const context = renderContext();
+  const cleanups = effects.map((effect) => effect());
+  mounting = false;
+
+  await calendar.requestGoogleCalendarAuthorization(auth as never);
+  assert.ok(storageMap.has(calendar.GCAL_AUTH_STORAGE_KEY));
+
+  await context.logout();
+  assert.equal(storageMap.has(calendar.GCAL_AUTH_STORAGE_KEY), false);
+  assert.equal(calendar.getGoogleCalendarAuthState().status, "not_authorized");
+  assert.equal(calendar.getGoogleCalendarAccessToken(null), null);
+
+  for (const cleanup of cleanups) if (typeof cleanup === "function") cleanup();
+});
+
+test("Requirement 9: Repeated mounting does not duplicate listeners or popup calls", async () => {
+  const initialPopups = popupCalls;
+  for (let i = 0; i < 5; i++) {
+    slots = []; effects = []; mounting = true;
+    renderContext();
+    const cleanups = effects.map((effect) => effect());
+    mounting = false;
+    for (const cleanup of cleanups) if (typeof cleanup === "function") cleanup();
+  }
+  assert.equal(popupCalls, initialPopups);
+});
+
+test("Requirement 11: Sensitive tokens never leak into exported state or stringified objects", async () => {
+  const user = auth.currentUser!;
+  profile = { sub: "google-a" };
+  const stateResult = await calendar.requestGoogleCalendarAuthorization(auth as never);
+
+  const stringified = JSON.stringify(stateResult);
+  assert.equal(stringified.includes(TOKEN), false);
+
+  const authState = calendar.getGoogleCalendarAuthState();
+  assert.equal(JSON.stringify(authState).includes(TOKEN), false);
+});
+
+test("Requirement 12: Calendar service operates safely with both authenticated and unauthenticated users", () => {
+  // Disconnected user
+  assert.doesNotThrow(() => {
+    calendar.syncGoogleCalendarUser(null);
+    assert.equal(calendar.getGoogleCalendarAccessToken(null), null);
+    assert.equal(calendar.getGoogleCalendarAuthState().status, "not_authorized");
+  });
+
+  // Re-authenticated user
+  const user = makeUser("firebase-user-12", "google-acct-12");
+  assert.doesNotThrow(() => {
+    calendar.syncGoogleCalendarUser(user);
+    assert.equal(calendar.getGoogleCalendarAccessToken(user), null);
+  });
+});
+

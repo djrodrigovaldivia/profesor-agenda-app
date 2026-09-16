@@ -24,6 +24,7 @@ export const GoogleCalendarSyncCard: React.FC = () => {
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showConfirmDisconnect, setShowConfirmDisconnect] = useState(false);
 
   const isConnected = calendarAuth.status === "authorized_temporarily";
   const requiresReauth = calendarAuth.status === "requires_reauthorization";
@@ -80,6 +81,7 @@ export const GoogleCalendarSyncCard: React.FC = () => {
 
   const handleDisconnect = () => {
     clearCalendarAuth();
+    setShowConfirmDisconnect(false);
     setSuccessMessage("Google Calendar ha sido desconectado de esta sesión.");
     setErrorMessage(null);
   };
@@ -128,17 +130,17 @@ export const GoogleCalendarSyncCard: React.FC = () => {
           ) : isConnected ? (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-800/70 rounded-full text-emerald-400 text-[11px] font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Conectado</span>
+              <span>Google Calendar conectado</span>
             </div>
           ) : requiresReauth ? (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-950/60 border border-amber-800/70 rounded-full text-amber-300 text-[11px] font-medium">
               <span className="w-2 h-2 rounded-full bg-amber-400" />
-              <span>Token expirado</span>
+              <span>Google Calendar requiere reconexión</span>
             </div>
           ) : (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-full text-slate-400 text-[11px] font-medium">
               <span className="w-2 h-2 rounded-full bg-slate-500" />
-              <span>No conectado</span>
+              <span>Google Calendar desconectado</span>
             </div>
           )}
         </div>
@@ -196,17 +198,45 @@ export const GoogleCalendarSyncCard: React.FC = () => {
                   <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
                 </a>
 
-                <button
-                  type="button"
-                  id="btn-desconectar-calendar"
-                  onClick={handleDisconnect}
-                  className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-rose-950/40 text-slate-300 hover:text-rose-300 border border-slate-700/80 hover:border-rose-800/50 text-xs font-medium rounded-lg transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Desconectar</span>
-                </button>
+                {!showConfirmDisconnect && (
+                  <button
+                    type="button"
+                    id="btn-desconectar-calendar"
+                    onClick={() => setShowConfirmDisconnect(true)}
+                    className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-rose-950/40 text-slate-300 hover:text-rose-300 border border-slate-700/80 hover:border-rose-800/50 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Desconectar Google Calendar</span>
+                  </button>
+                )}
               </div>
             </div>
+
+            {showConfirmDisconnect && (
+              <div className="mt-3 p-3 bg-slate-900 border border-amber-800/60 rounded-xl space-y-2">
+                <p className="text-xs text-slate-300 font-medium">
+                  ¿Desconectar Google Calendar? Las clases y tocatas dejarán de sincronizarse automáticamente con tu cuenta de Google.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    id="btn-cancelar-desconectar"
+                    onClick={() => setShowConfirmDisconnect(false)}
+                    className="min-h-[36px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-confirmar-desconectar"
+                    onClick={handleDisconnect}
+                    className="min-h-[36px] px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                  >
+                    Confirmar desconexión
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">
@@ -283,7 +313,7 @@ export const GoogleCalendarSyncCard: React.FC = () => {
                 ) : requiresReauth ? (
                   <>
                     <RefreshCw className="w-4 h-4" />
-                    <span>Reautorizar Google Calendar</span>
+                    <span>Reconectar Google Calendar</span>
                   </>
                 ) : (
                   <>

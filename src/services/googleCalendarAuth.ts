@@ -43,6 +43,17 @@ export class GoogleCalendarAuthError extends Error {
 // This is a conservative LOCAL lease, not proof of server validity or granted
 // scopes. A future caller must invalidate on 401/insufficient-permission 403.
 const TOKEN_LEASE_MS = 50 * 60 * 1000;
+
+export const GCAL_AUTH_STORAGE_KEY = "profesor_agenda_gcal_auth_v1";
+
+export interface StoredGoogleCalendarAuth {
+  readonly uid: string;
+  readonly googleAccountId: string;
+  readonly calendarId: "primary";
+  readonly validUntil: number;
+  readonly token?: string;
+}
+
 let session: {
   token: string;
   uid: string;
@@ -50,12 +61,70 @@ let session: {
   validUntil: number;
 } | null = null;
 let state: GoogleCalendarAuthState = Object.freeze({
-  status: "not_authorized", identity: null,
+  status: "not_authorized",
+  identity: null,
 });
 let generation = 0;
 let ownerKey: string | null = null;
 let expiryTimer: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
+
+function getStorage(): Storage | null {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      return window.localStorage;
+    }
+    if (typeof globalThis !== "undefined" && globalThis.localStorage) {
+      return globalThis.localStorage;
+    }
+  } catch {
+    // Storage access might be restricted or throw in strict environments
+  }
+  return null;
+}
+
+export function loadPersistedAuth(user: User | null): StoredGoogleCalendarAuth | null {
+  try {
+    const storage = getStorage();
+    if (!storage) return null;
+    const raw = storage.getItem(GCAL_AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.uid !== "string" ||
+      typeof parsed.googleAccountId !== "string" ||
+      typeof parsed.validUntil !== "number"
+    ) {
+      storage.removeItem(GCAL_AUTH_STORAGE_KEY);
+      return null;
+    }
+    if (user) {
+      const gId = linkedGoogleId(user);
+      if (parsed.uid !== user.uid || (gId && parsed.googleAccountId !== gId)) {
+        return null;
+      }
+    }
+    return parsed as StoredGoogleCalendarAuth;
+  } catch {
+    return null;
+  }
+}
+
+export function savePersistedAuth(data: StoredGoogleCalendarAuth | null): void {
+  try {
+    const storage = getStorage();
+    if (!storage) return;
+    if (!data) {
+      storage.removeItem(GCAL_AUTH_STORAGE_KEY);
+    } else {
+      storage.setItem(GCAL_AUTH_STORAGE_KEY, JSON.stringify(data));
+    }
+  } catch {
+    // Storage quota or sandboxing error ignored
+  }
+}
 
 function publish(status: GoogleCalendarAuthStatus, googleAccountId?: string): void {
   state = Object.freeze({
@@ -69,15 +138,34 @@ function publish(status: GoogleCalendarAuthStatus, googleAccountId?: string): vo
 export function clearGoogleCalendarAuth(requiresReauthorization = false): void {
   generation += 1;
   session = null;
-  if (!requiresReauthorization) ownerKey = null;
   clearTimeout(expiryTimer);
   expiryTimer = undefined;
-  publish(requiresReauthorization ? "requires_reauthorization" : "not_authorized");
+
+  if (requiresReauthorization) {
+    const existing = loadPersistedAuth(null);
+    if (existing) {
+      savePersistedAuth({
+        uid: existing.uid,
+        googleAccountId: existing.googleAccountId,
+        calendarId: "primary",
+        validUntil: Math.min(existing.validUntil, Date.now()),
+      });
+      publish("requires_reauthorization", existing.googleAccountId);
+      return;
+    }
+    publish("requires_reauthorization");
+  } else {
+    ownerKey = null;
+    savePersistedAuth(null);
+    publish("not_authorized");
+  }
 }
 
 export function subscribeGoogleCalendarAuth(listener: () => void): () => void {
   listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 function linkedGoogleId(user: User | null): string | undefined {
@@ -87,10 +175,66 @@ function linkedGoogleId(user: User | null): string | undefined {
 /** Call from the Auth observer even for logout or a user with no Calendar session. */
 export function syncGoogleCalendarUser(user: User | null): void {
   const nextKey = user ? JSON.stringify([user.uid, linkedGoogleId(user)]) : null;
-  if (!user || ownerKey !== nextKey) {
-    clearGoogleCalendarAuth();
-    ownerKey = nextKey;
+
+  if (!user) {
+    generation += 1;
+    session = null;
+    ownerKey = null;
+    clearTimeout(expiryTimer);
+    expiryTimer = undefined;
+    publish("not_authorized");
+    return;
   }
+
+  if (ownerKey === nextKey) {
+    if (session !== null && Date.now() < session.validUntil) {
+      return;
+    }
+    if (state.status === "requires_reauthorization") {
+      return;
+    }
+  }
+
+  ownerKey = nextKey;
+  const stored = loadPersistedAuth(user);
+  if (!stored) {
+    generation += 1;
+    session = null;
+    clearTimeout(expiryTimer);
+    expiryTimer = undefined;
+    publish("not_authorized");
+    return;
+  }
+
+  const now = Date.now();
+  if (stored.token && now < stored.validUntil) {
+    session = {
+      token: stored.token,
+      uid: stored.uid,
+      googleAccountId: stored.googleAccountId,
+      validUntil: stored.validUntil,
+    };
+    clearTimeout(expiryTimer);
+    expiryTimer = setTimeout(() => clearGoogleCalendarAuth(true), stored.validUntil - now);
+    publish("authorized_temporarily", stored.googleAccountId);
+  } else {
+    session = null;
+    clearTimeout(expiryTimer);
+    expiryTimer = undefined;
+    if (stored.token) {
+      savePersistedAuth({
+        uid: stored.uid,
+        googleAccountId: stored.googleAccountId,
+        calendarId: "primary",
+        validUntil: stored.validUntil,
+      });
+    }
+    publish("requires_reauthorization", stored.googleAccountId);
+  }
+}
+
+export function markGoogleCalendarRequiresReauthorization(): void {
+  clearGoogleCalendarAuth(true);
 }
 
 export function getGoogleCalendarAuthState(): GoogleCalendarAuthState {
@@ -171,6 +315,13 @@ export async function requestGoogleCalendarAuthorization(auth: Auth): Promise<Go
     const validUntil = startedAt + TOKEN_LEASE_MS;
     if (Date.now() >= validUntil) throw new GoogleCalendarAuthError("missing_token");
     session = { token, uid, googleAccountId, validUntil };
+    savePersistedAuth({
+      uid,
+      googleAccountId,
+      calendarId: "primary",
+      validUntil,
+      token,
+    });
     expiryTimer = setTimeout(() => clearGoogleCalendarAuth(true), validUntil - Date.now());
     publish("authorized_temporarily", googleAccountId);
     return state;

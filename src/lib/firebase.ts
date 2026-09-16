@@ -1,6 +1,9 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
   GoogleAuthProvider,
   signInWithPopup,
   getRedirectResult,
@@ -18,8 +21,20 @@ import firebaseConfig from "../../firebase-applet-config.json";
 // Initialize Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Auth & Firestore with dedicated or default Database ID
-export const auth = getAuth(app);
+// Initialize Auth with Safari/iOS resilient local persistence (fallback from IndexedDB to localStorage)
+let authInstance: ReturnType<typeof getAuth>;
+try {
+  if (typeof window !== "undefined" && typeof initializeAuth === "function") {
+    authInstance = initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+    });
+  } else {
+    authInstance = getAuth(app);
+  }
+} catch {
+  authInstance = getAuth(app);
+}
+export const auth = authInstance;
 const customDbId = (firebaseConfig as unknown as { firestoreDatabaseId?: string }).firestoreDatabaseId;
 export const db = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
 
